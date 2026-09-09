@@ -5,10 +5,12 @@ import java.util.Map;
 
 /**
  * B2 content contract: a pack exposes plain-data states per tick plus the
- * pure jobs deciding {@code "x,z"} cells. The bridge seals states into a
- * Snapshot, runs every job, merges owned-first, and lands cells on the
- * world. Packs never see the live world; loading is reflective (no
- * bridge-to-content compile edge, Q2). Java 8, zero deps.
+ * pure jobs deciding cells — {@code "x,z"} plane cells (feature jobs) and
+ * {@code "x,y,z:ns:block"} volume cells (V3 structure jobs, carrying their
+ * own y and block). The bridge seals states into a Snapshot, runs every
+ * job, merges owned-first, and lands cells on the world. Packs never see
+ * the live world; loading is reflective (no bridge-to-content compile
+ * edge, Q2). Java 8, zero deps.
  */
 public interface ContentPack {
     /** Pack namespace, e.g. {@code "example1"}; never null. */

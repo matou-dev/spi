@@ -7,6 +7,10 @@ https://github.com/matou-dev/spi/releases.
 
 ## [Unreleased]
 
+- `ContentPack` doc now names both decided cell shapes (`"x,z"` plane
+  cells and `"x,y,z:ns:block"` V3 volume cells carrying their own y and
+  block); the `"x,z"`-only wording went false when example1 wired its
+  structure job.
 - SYNTAX-V3 structure genre (`spec/SYNTAX-V3.md`, frozen; V1/V2 untouched):
   `anchor`/`size` (vec3), `palette` (list\<block_ref\>), `parts`
   (list\<structure_ref\>, empty = leaf), `count` (u32). Semantic validation
