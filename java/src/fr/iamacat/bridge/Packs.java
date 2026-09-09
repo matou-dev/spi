@@ -1,5 +1,6 @@
 package fr.iamacat.bridge;
 
+import fr.iamacat.spi.ConfigurablePack;
 import fr.iamacat.spi.ContentPack;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -30,7 +31,7 @@ public final class Packs {
         public final String blockName;
         public final Map<String, String> args;
 
-        PackSpec(String className, int y, String blockName,
+        public PackSpec(String className, int y, String blockName,
                 Map<String, String> args) {
             this.className = className;
             this.y = y;
@@ -133,5 +134,29 @@ public final class Packs {
                     "E_BRIDGE_PACK:unbuildable <" + className + "> ("
                             + e.getMessage() + ")");
         }
+    }
+
+    /**
+     * Instantiate then configure in one named step: packs wanting operator
+     * args implement {@code ConfigurablePack} and get them; any other pack
+     * with non-empty args is refused (args would vanish silently), and an
+     * empty arg map loads it plain. The pack's own {@code configure}
+     * refusals propagate untouched.
+     */
+    public static ContentPack loadConfigured(String className,
+            Map<String, String> args) {
+        if (args == null) {
+            throw new NullPointerException("E_BRIDGE_PACK:null args");
+        }
+        ContentPack pack = load(className);
+        if (pack instanceof ConfigurablePack) {
+            ((ConfigurablePack) pack).configure(args);
+            return pack;
+        }
+        if (!args.isEmpty()) {
+            throw new IllegalArgumentException("E_BRIDGE_PACK:args <"
+                    + className + "> (pack takes no operator args)");
+        }
+        return pack;
     }
 }

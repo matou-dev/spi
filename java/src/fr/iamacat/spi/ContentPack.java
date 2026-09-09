@@ -11,6 +11,9 @@ import java.util.Map;
  * job, merges owned-first, and lands cells on the world. Packs never see
  * the live world; loading is reflective (no bridge-to-content compile
  * edge, Q2). Java 8, zero deps.
+ *
+ * <p>Cell shapes parse and render through {@link Cell}; landing goes to
+ * {@code fr.iamacat.bridge.CellSink} (see {@code AUTHORING.md}).
  */
 public interface ContentPack {
     /** Pack namespace, e.g. {@code "example1"}; never null. */

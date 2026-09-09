@@ -7,6 +7,20 @@ https://github.com/matou-dev/spi/releases.
 
 ## [Unreleased]
 
+- Authoring surface (test-mod scaling audit): shared pure `Cell` value
+  type (`fr.iamacat.spi`, plane + volume parse/render/`posKey`, exact
+  bridge accept-set, `E_MATOU_CELL` codes); `ForgeCells` delegates to it
+  and recodes to identical `E_BRIDGE_CELL` messages (locked in
+  `BridgeCheck`), `BlockCell` constructor now public. `Snapshot` gains
+  `require`/`stringOf`/`longOf`/`mapOf` (`E_MATOU_SNAPSHOT` codes, `get`
+  unchanged); shared `Counts.positive(raw, id, code)` count rule.
+  `Packs.loadConfigured` instantiates + configures in one named step
+  (stray args on a non-configurable pack refused), `PackSpec`
+  constructor now public. New `AUTHORING.md` maps goal to interfaces
+  (decision table, refusal convention, multi-job pack pattern, test
+  conventions). Javadoc `@see` links (`MatouJob` to RNG/snapshot
+  accessors, `ContentPack` to cells/sink). Additive only: no signature
+  changed, no error code renamed.
 - Shared apply seam `fr.iamacat.bridge` (v1.1.0): `SpiBridge`, `CellSink`,
   `ForgeCells`, `ForgeSnapshot`, `ForgeContent`, `Packs` moved up from
   `bridge-1710` at identical FQNs (zero MC, only `matou-spi` deps);

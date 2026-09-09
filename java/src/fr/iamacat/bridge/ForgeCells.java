@@ -1,5 +1,6 @@
 package fr.iamacat.bridge;
 
+import fr.iamacat.spi.Cell;
 import java.util.List;
 
 /**
@@ -8,6 +9,10 @@ import java.util.List;
  * and {@code "x,y,z:ns:block"} volume cells (own y/block). Pure Java,
  * zero Minecraft: the FML side owns the live world, this side only
  * refuses loudly. Java 8, zero deps.
+ *
+ * <p>The codec itself lives in {@link Cell}; these wrappers only recode
+ * its refusals to the bridge {@code E_BRIDGE_CELL} names the forge side
+ * and its gates match on.
  */
 public final class ForgeCells {
     private ForgeCells() {}
@@ -19,7 +24,7 @@ public final class ForgeCells {
         public final int z;
         public final String block;
 
-        BlockCell(int x, int y, int z, String block) {
+        public BlockCell(int x, int y, int z, String block) {
             this.x = x;
             this.y = y;
             this.z = z;
@@ -36,15 +41,10 @@ public final class ForgeCells {
         if (cell == null) {
             throw new NullPointerException("E_BRIDGE_CELL:null (want \"x,z\")");
         }
-        String[] parts = cell.split(",", -1);
-        if (parts.length != 2) {
-            throw new IllegalArgumentException(
-                    "E_BRIDGE_CELL:shape <" + cell + "> (want \"x,z\")");
-        }
         try {
-            return new int[]{Integer.parseInt(parts[0]),
-                    Integer.parseInt(parts[1])};
-        } catch (NumberFormatException e) {
+            Cell parsed = Cell.parsePlane(cell);
+            return new int[]{parsed.x, parsed.z};
+        } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException(
                     "E_BRIDGE_CELL:shape <" + cell + "> (want \"x,z\")");
         }
@@ -62,20 +62,11 @@ public final class ForgeCells {
             throw new NullPointerException(
                     "E_BRIDGE_CELL:null (want \"x,y,z:ns:block\")");
         }
-        int cut = cell.indexOf(':');
-        String head = cut < 0 ? cell : cell.substring(0, cut);
-        String block = cut < 0 ? "" : cell.substring(cut + 1);
-        String[] parts = head.split(",", -1);
-        if (parts.length != 3 || block.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "E_BRIDGE_CELL:shape <" + cell
-                            + "> (want \"x,y,z:ns:block\")");
-        }
         try {
-            return new BlockCell(Integer.parseInt(parts[0]),
-                    Integer.parseInt(parts[1]), Integer.parseInt(parts[2]),
-                    block);
-        } catch (NumberFormatException e) {
+            Cell parsed = Cell.parseVolume(cell);
+            return new BlockCell(parsed.x, parsed.y, parsed.z,
+                    parsed.block);
+        } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException(
                     "E_BRIDGE_CELL:shape <" + cell
                             + "> (want \"x,y,z:ns:block\")");
