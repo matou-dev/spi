@@ -1,11 +1,15 @@
 # Changelog — matou-dev/spi
 
 Notable changes to this repo. Binaries ship inside the
-`matou-dev/bridge-1710` versioned server drop; store listings stay DRAFT
+`matou-dev/bridge-*` versioned server drops; store listings stay DRAFT
 (see hub `NAMES.md`). Full notes per tag:
 https://github.com/matou-dev/spi/releases.
 
 ## [Unreleased]
+
+## [1.2.0] - 2026-09-09
+
+Source release: https://github.com/matou-dev/spi/releases/tag/v1.2.0
 
 - Authoring surface (test-mod scaling audit): shared pure `Cell` value
   type (`fr.iamacat.spi`, plane + volume parse/render/`posKey`, exact
@@ -21,6 +25,10 @@ https://github.com/matou-dev/spi/releases.
   conventions). Javadoc `@see` links (`MatouJob` to RNG/snapshot
   accessors, `ContentPack` to cells/sink). Additive only: no signature
   changed, no error code renamed.
+## [1.1.0] - 2026-09-09
+
+Source release: https://github.com/matou-dev/spi/releases/tag/v1.1.0
+
 - Shared apply seam `fr.iamacat.bridge` (v1.1.0): `SpiBridge`, `CellSink`,
   `ForgeCells`, `ForgeSnapshot`, `ForgeContent`, `Packs` moved up from
   `bridge-1710` at identical FQNs (zero MC, only `matou-spi` deps);
