@@ -4,7 +4,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 hits=$(rg -n --no-heading "net\.minecraft|cpw\.mods\.|net\.minecraftforge" \
-  --glob '!tools/**' --glob '!.git/**' --glob '!*.md' . || true)
+  --glob '!tools/**' --glob '!.git/**' --glob '!*.md' --glob '!java/build/**' . || true)
 if [ -n "$hits" ]; then
   echo "FAIL zero-mc-import :"
   echo "$hits"
