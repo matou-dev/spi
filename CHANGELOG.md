@@ -7,6 +7,16 @@ https://github.com/matou-dev/spi/releases.
 
 ## [Unreleased]
 
+- SYNTAX-V2 foundation types (`spec/SYNTAX-V2.md`, frozen; V1 untouched):
+  `i32`, `vec3`, `list<T>` (v2-only, no new genre, no new error codes).
+  Both parsers accept `syntax 1|2` and report it in the tree; anything else
+  stays `E_MATOU_VERSION` (`err_version` golden now probes `syntax 3`).
+- Goldens: 14 shared py+java (`valid_v2_types`, `err_v2_vec3`,
+  `err_v2_list_elem`, `err_v2_list_ref`, `err_v1_vec3` version-gating lock).
+- `MatouParse.java` refactored table-driven (precompiled patterns, lookup
+  tables, fused int branches); 521 lines — the 450 alert was reviewed,
+  residual growth is closed-set type branches, future genres add none.
+
 - CI: runner pinned (`ubuntu-24.04`), JDK 21 via `setup-java` (temurin),
   actions pinned by SHA with Dependabot.
 - Docs: README rewritten in English (R3 hygiene).

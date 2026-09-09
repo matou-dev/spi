@@ -1,0 +1,28 @@
+syntax 2
+namespace v2.probe
+
+genre Block : Data
+field hardness : f32
+field level : i32
+field anchor : vec3
+field tags : list<string>
+field tiers : list<u32>
+
+genre Feature : Data
+field at : vec3
+field palette : list<block_ref>
+field counts : list<i32>
+field notes : list<string>
+
+block probe_stone
+  hardness = 2.5
+  level = -3
+  anchor = 1, -2, 300
+  tags = ["solid", "hot, dense", "ore"]
+  tiers = [1, 20, 300]
+
+feature probe_vein
+  at = 0,64,-8
+  palette = [v2.probe:probe_stone]
+  counts = [-1, 0, 7]
+  notes = []

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Reference parser for SYNTAX-V1 (spec: spec/SYNTAX-V1.md).
+"""Reference parser for SYNTAX-V1/V2 (spec: spec/SYNTAX-V1.md,
+spec/SYNTAX-V2.md).
 
 Single tokenizer + single recursive-descent-free state machine (line-oriented).
 Fail-fast: first error wins, always `CODE:LINE`. No Minecraft imports.
@@ -12,7 +13,23 @@ GENRES_V1 = ("block", "item", "mob", "feature")
 GENRE_DECL = {g: g.capitalize() for g in GENRES_V1}  # block -> Block
 RESERVED = {"syntax", "namespace", "from", "use", "genre", "field",
             "true", "false"}
-TYPES = ("f32", "u32", "bool", "string")
+SCALARS_V1 = ("f32", "u32", "bool", "string")
+SCALARS_V2_ONLY = ("i32", "vec3")
+
+
+def valid_type(ftyp, syntax):
+    if ftyp in SCALARS_V1:
+        return True
+    if syntax >= 2 and ftyp in SCALARS_V2_ONLY:
+        return True
+    if syntax >= 2 and ftyp.startswith("list<") and ftyp.endswith(">"):
+        inner = ftyp[5:-1]
+        return (inner in SCALARS_V1 or inner in SCALARS_V2_ONLY
+                or (inner.endswith("_ref")
+                    and inner[:-4] in GENRES_V1))
+    if ftyp.endswith("_ref") and ftyp[:-4] in GENRES_V1:
+        return True
+    return False
 
 
 class Err(Exception):
@@ -49,8 +66,10 @@ def parse_file(path):
 
     # --- syntax header: first significant line, exact ---
     n, l = lines[0]
-    if not re.fullmatch(r"syntax 1", l):
+    m = re.fullmatch(r"syntax ([12])", l)
+    if m is None:
         raise Err("E_MATOU_VERSION", n, l)
+    syntax = int(m.group(1))
     pos = 1
 
     namespace, imports = None, set()
@@ -117,8 +136,7 @@ def parse_file(path):
             fname, ftyp = m.group(1), m.group(2)
             if fname in RESERVED:
                 raise Err("E_MATOU_RESERVED", n, fname)
-            if not (ftyp in TYPES or (ftyp.endswith("_ref")
-                    and ftyp[:-4] in GENRES_V1)):
+            if not valid_type(ftyp, syntax):
                 raise Err("E_MATOU_TYPE", n, ftyp)
             if fname in genres[open_genre]:
                 raise Err("E_MATOU_FIELD", n, "duplicate " + fname)
@@ -164,19 +182,35 @@ def parse_file(path):
         inst["fields"] = fields
         del inst["raw"]
         out_instances.append(inst)
-    return {"syntax": 1, "namespace": namespace,
+    return {"syntax": syntax, "namespace": namespace,
             "imports": sorted(imports),
             "genres": genres, "instances": out_instances}
 
 
-def parse_value(raw, typ, line, local_ns, imports, known):
+def split_top_level(raw):
+    """Split on top-level commas; a comma inside "..." never splits."""
+    parts, cur, quoted = [], [], False
+    for ch in raw:
+        if ch == '"':
+            quoted = not quoted
+        if ch == "," and not quoted:
+            parts.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    parts.append("".join(cur))
+    return parts
+
+
+def parse_scalar(raw, typ, line, local_ns, imports, known):
     if typ == "f32":
         try:
             return float(raw)
         except ValueError:
             raise Err("E_MATOU_TYPE", line, raw)
-    if typ == "u32":
-        if re.fullmatch(r"\d+", raw):
+    if typ in ("u32", "i32"):
+        pat = r"\d+" if typ == "u32" else r"-?\d+"
+        if re.fullmatch(pat, raw):
             return int(raw)
         raise Err("E_MATOU_TYPE", line, raw)
     if typ == "bool":
@@ -188,6 +222,12 @@ def parse_value(raw, typ, line, local_ns, imports, known):
         if m is None:
             raise Err("E_MATOU_TYPE", line, raw)
         return m.group(1)
+    if typ == "vec3":
+        parts = [p.strip() for p in raw.split(",")]
+        if len(parts) != 3 or not all(
+                re.fullmatch(r"-?\d+", p) for p in parts):
+            raise Err("E_MATOU_TYPE", line, raw)
+        return [int(p) for p in parts]
     # xxx_ref
     m = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_.]*):([A-Za-z_][A-Za-z0-9_]*)",
                      raw)
@@ -200,6 +240,21 @@ def parse_value(raw, typ, line, local_ns, imports, known):
     if ns == local_ns and (ns, want_genre, name) not in known:
         raise Err("E_MATOU_UNKNOWN_REF", line, raw)
     return raw
+
+
+def parse_value(raw, typ, line, local_ns, imports, known):
+    if typ.startswith("list<") and typ.endswith(">"):
+        inner = typ[5:-1]
+        s = raw.strip()
+        if not (s.startswith("[") and s.endswith("]")):
+            raise Err("E_MATOU_TYPE", line, raw)
+        body = s[1:-1].strip()
+        if body == "":
+            return []
+        return [parse_scalar(e.strip(), inner, line, local_ns,
+                             imports, known)
+                for e in split_top_level(body)]
+    return parse_scalar(raw.strip(), typ, line, local_ns, imports, known)
 
 
 def main(path):

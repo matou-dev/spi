@@ -1,0 +1,8 @@
+syntax 1
+namespace a.b
+
+genre Block : Data
+field at : vec3
+
+block stone
+  at = 1,2,3

@@ -4,41 +4,72 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Reference parser for SYNTAX-V1 (spec: spec/SYNTAX-V1.md).
- * Java port of parser/matou_parse.py — the 9 goldens are the shared oracle:
+ * Reference parser for SYNTAX-V1/V2 (spec: spec/SYNTAX-V1.md,
+ * spec/SYNTAX-V2.md).
+ * Java port of parser/matou_parse.py — the goldens are the shared oracle:
  * both implementations must agree. Zero Minecraft imports. Java 8 bytecode.
  */
 public final class MatouParse {
     private static final String[] GENRES_V1 = {"block", "item", "mob", "feature"};
-    private static final String[] RESERVED = {"syntax", "namespace", "from",
-            "use", "genre", "field", "true", "false"};
+
+    // Table-driven lookup: word -> Decl (block -> Block), reserved words,
+    // scalar types. Single derivation point for the closed V1 vocabularies.
+    private static final Map<String, String> DECL_BY_WORD = new HashMap<String, String>();
+    private static final Set<String> RESERVED = new HashSet<String>(Arrays.asList(
+            "syntax", "namespace", "from", "use", "genre", "field",
+            "true", "false"));
+    private static final Set<String> SCALARS_V1 = new HashSet<String>(Arrays.asList(
+            "f32", "u32", "bool", "string"));
+    private static final Set<String> SCALARS_V2_ONLY =
+            new HashSet<String>(Arrays.asList("i32", "vec3"));
+
+    // Precompiled once: the hot line classifiers below must not recompile.
+    private static final Pattern P_SYNTAX =
+            Pattern.compile("syntax ([12])");
+    private static final Pattern P_NAMESPACE =
+            Pattern.compile("namespace ([A-Za-z_][A-Za-z0-9_.]*)");
+    private static final Pattern P_FROM =
+            Pattern.compile("from ([A-Za-z_][A-Za-z0-9_.]*) use (.+)");
+    private static final Pattern P_GENRE =
+            Pattern.compile("genre ([A-Za-z_][A-Za-z0-9_]*) : Data");
+    private static final Pattern P_FIELD =
+            Pattern.compile("field ([A-Za-z_][A-Za-z0-9_]*) : (\\S+)");
+    private static final Pattern P_INSTANCE =
+            Pattern.compile("([A-Za-z_][A-Za-z0-9_]*) ([A-Za-z_][A-Za-z0-9_]*)");
+    private static final Pattern P_FIELDLINE =
+            Pattern.compile("  ([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*(.+)");
+    private static final Pattern P_FQID = Pattern.compile(
+            "([A-Za-z_][A-Za-z0-9_.]*):([A-Za-z_][A-Za-z0-9_]*)");
+    private static final Pattern P_UINT = Pattern.compile("\\d+");
+    private static final Pattern P_STRING = Pattern.compile("\"(.*)\"");
+
+    static {
+        for (String g : GENRES_V1) {
+            DECL_BY_WORD.put(g,
+                    Character.toUpperCase(g.charAt(0)) + g.substring(1));
+        }
+    }
 
     private MatouParse() {}
 
     private static boolean isReserved(String w) {
-        for (String r : RESERVED) {
-            if (r.equals(w)) {
-                return true;
-            }
-        }
-        return false;
+        return RESERVED.contains(w);
     }
 
     private static String declOf(String gword) {
-        for (String g : GENRES_V1) {
-            if (g.equals(gword)) {
-                return Character.toUpperCase(g.charAt(0)) + g.substring(1);
-            }
-        }
-        return null;
+        return DECL_BY_WORD.get(gword);
     }
 
     private static final class Line {
@@ -84,8 +115,8 @@ public final class MatouParse {
         return s.substring(0, e);
     }
 
-    private static Matcher full(String re, String s) {
-        Matcher m = Pattern.compile(re).matcher(s);
+    private static Matcher match(Pattern p, String s) {
+        Matcher m = p.matcher(s);
         return m.matches() ? m : null;
     }
 
@@ -102,9 +133,11 @@ public final class MatouParse {
             throw new MatouParseException("E_MATOU_VERSION", 1, "empty file");
         }
         Line first = lines.get(0);
-        if (full("syntax 1", first.text) == null) {
+        Matcher syntaxHead = match(P_SYNTAX, first.text);
+        if (syntaxHead == null) {
             throw new MatouParseException("E_MATOU_VERSION", first.n, first.text);
         }
+        int syntax = Integer.parseInt(syntaxHead.group(1));
 
         String namespace = null;
         TreeSet<String> imports = new TreeSet<String>();
@@ -119,7 +152,7 @@ public final class MatouParse {
             String l = ln.text;
             int n = ln.n;
             if (l.startsWith(" ") || l.startsWith("\t")) {
-                Matcher m = full("  ([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*(.+)", l);
+                Matcher m = match(P_FIELDLINE, l);
                 if (m == null || pending == null) {
                     throw new MatouParseException("E_MATOU_INDENT", n, l);
                 }
@@ -145,7 +178,7 @@ public final class MatouParse {
                 pending = null;
             }
             if (l.startsWith("namespace ")) {
-                Matcher m = full("namespace ([A-Za-z_][A-Za-z0-9_.]*)", l);
+                Matcher m = match(P_NAMESPACE, l);
                 if (m == null) {
                     throw new MatouParseException("E_MATOU_HEADER", n, l);
                 }
@@ -156,14 +189,14 @@ public final class MatouParse {
                 namespace = m.group(1);
                 openGenre = null;
             } else if (l.startsWith("from ")) {
-                Matcher m = full("from ([A-Za-z_][A-Za-z0-9_.]*) use (.+)", l);
+                Matcher m = match(P_FROM, l);
                 if (m == null) {
                     throw new MatouParseException("E_MATOU_HEADER", n, l);
                 }
                 imports.add(m.group(1));
                 openGenre = null;
             } else if (l.startsWith("genre ")) {
-                Matcher m = full("genre ([A-Za-z_][A-Za-z0-9_]*) : Data", l);
+                Matcher m = match(P_GENRE, l);
                 if (m == null) {
                     throw new MatouParseException("E_MATOU_GENRE", n, l);
                 }
@@ -179,7 +212,7 @@ public final class MatouParse {
                 genres.put(decl, new LinkedHashMap<String, String>());
                 openGenre = decl;
             } else if (l.startsWith("field ")) {
-                Matcher m = full("field ([A-Za-z_][A-Za-z0-9_]*) : (\\S+)", l);
+                Matcher m = match(P_FIELD, l);
                 if (m == null || openGenre == null) {
                     throw new MatouParseException("E_MATOU_FIELD", n, l);
                 }
@@ -188,7 +221,7 @@ public final class MatouParse {
                 if (isReserved(fname)) {
                     throw new MatouParseException("E_MATOU_RESERVED", n, fname);
                 }
-                if (!validType(ftyp)) {
+                if (!validType(ftyp, syntax)) {
                     throw new MatouParseException("E_MATOU_TYPE", n, ftyp);
                 }
                 Map<String, String> gf = genres.get(openGenre);
@@ -198,7 +231,7 @@ public final class MatouParse {
                 }
                 gf.put(fname, ftyp);
             } else {
-                Matcher m = full("([A-Za-z_][A-Za-z0-9_]*) ([A-Za-z_][A-Za-z0-9_]*)", l);
+                Matcher m = match(P_INSTANCE, l);
                 if (m == null) {
                     throw new MatouParseException("E_MATOU_GENRE", n, l);
                 }
@@ -244,7 +277,7 @@ public final class MatouParse {
             Map<String, Object> fields = new LinkedHashMap<String, Object>();
             for (RawField r : sh.raw) {
                 fields.put(r.name, parseValue(r.raw, gf.get(r.name), r.line,
-                        namespace, imports, namespace, shells));
+                        namespace, imports, shells));
             }
             Map<String, Object> inst = new LinkedHashMap<String, Object>();
             inst.put("decl", sh.decl);
@@ -253,7 +286,7 @@ public final class MatouParse {
             out.add(inst);
         }
         Map<String, Object> tree = new LinkedHashMap<String, Object>();
-        tree.put("syntax", 1);
+        tree.put("syntax", syntax);
         tree.put("namespace", namespace);
         tree.put("imports", new ArrayList<String>(imports));
         tree.put("genres", genres);
@@ -264,7 +297,7 @@ public final class MatouParse {
     private static void closeCheck(Shell inst,
             Map<String, Map<String, String>> genres, int endLine)
             throws MatouParseException {
-        List<String> seen = new ArrayList<String>();
+        Set<String> seen = new HashSet<String>();
         for (RawField r : inst.raw) {
             seen.add(r.name);
         }
@@ -276,9 +309,8 @@ public final class MatouParse {
         }
     }
 
-    private static boolean validType(String t) {
-        if (t.equals("f32") || t.equals("u32") || t.equals("bool")
-                || t.equals("string")) {
+    private static boolean validScalarOrRef(String t) {
+        if (SCALARS_V1.contains(t) || SCALARS_V2_ONLY.contains(t)) {
             return true;
         }
         if (t.endsWith("_ref")) {
@@ -288,8 +320,69 @@ public final class MatouParse {
         return false;
     }
 
+    private static boolean validType(String t, int syntax) {
+        if (SCALARS_V1.contains(t)) {
+            return true;
+        }
+        if (syntax >= 2) {
+            if (SCALARS_V2_ONLY.contains(t)) {
+                return true;
+            }
+            if (t.startsWith("list<") && t.endsWith(">")) {
+                return validScalarOrRef(t.substring(5, t.length() - 1));
+            }
+        }
+        return t.endsWith("_ref")
+                && declOf(t.substring(0, t.length() - 4)) != null;
+    }
+
     private static Object parseValue(String raw, String typ, int line,
-            String localNs, TreeSet<String> imports, String ns,
+            String localNs, TreeSet<String> imports,
+            List<Shell> shells) throws MatouParseException {
+        if (typ.startsWith("list<") && typ.endsWith(">")) {
+            String inner = typ.substring(5, typ.length() - 1);
+            String s = raw.trim();
+            if (s.length() < 2 || !s.startsWith("[") || !s.endsWith("]")) {
+                throw new MatouParseException("E_MATOU_TYPE", line, raw);
+            }
+            String body = s.substring(1, s.length() - 1).trim();
+            List<Object> out = new ArrayList<Object>();
+            if (!body.isEmpty()) {
+                for (String e : splitTopLevel(body)) {
+                    out.add(parseScalar(e.trim(), inner, line,
+                            localNs, imports, shells));
+                }
+            }
+            return out;
+        }
+        return parseScalar(raw.trim(), typ, line, localNs, imports, shells);
+    }
+
+    /** Top-level comma split; a comma inside "..." never splits. */
+    private static List<String> splitTopLevel(String body) {
+        List<String> parts = new ArrayList<String>();
+        StringBuilder cur = new StringBuilder();
+        boolean quoted = false;
+        for (int i = 0; i < body.length(); i++) {
+            char ch = body.charAt(i);
+            if (ch == '"') {
+                quoted = !quoted;
+            }
+            if (ch == ',' && !quoted) {
+                parts.add(cur.toString());
+                cur.setLength(0);
+            } else {
+                cur.append(ch);
+            }
+        }
+        parts.add(cur.toString());
+        return parts;
+    }
+
+    private static final Pattern P_INT = Pattern.compile("-?\\d+");
+
+    private static Object parseScalar(String raw, String typ, int line,
+            String localNs, TreeSet<String> imports,
             List<Shell> shells) throws MatouParseException {
         if (typ.equals("f32")) {
             try {
@@ -298,8 +391,9 @@ public final class MatouParse {
                 throw new MatouParseException("E_MATOU_TYPE", line, raw);
             }
         }
-        if (typ.equals("u32")) {
-            if (full("\\d+", raw) != null) {
+        if (typ.equals("u32") || typ.equals("i32")) {
+            Pattern p = typ.equals("u32") ? P_UINT : P_INT;
+            if (match(p, raw) != null) {
                 try {
                     return Long.valueOf(raw);
                 } catch (NumberFormatException e) {
@@ -318,13 +412,32 @@ public final class MatouParse {
             throw new MatouParseException("E_MATOU_TYPE", line, raw);
         }
         if (typ.equals("string")) {
-            Matcher m = full("\"(.*)\"", raw);
+            Matcher m = match(P_STRING, raw);
             if (m == null) {
                 throw new MatouParseException("E_MATOU_TYPE", line, raw);
             }
             return m.group(1);
         }
-        Matcher m = full("([A-Za-z_][A-Za-z0-9_.]*):([A-Za-z_][A-Za-z0-9_]*)", raw);
+        if (typ.equals("vec3")) {
+            String[] parts = raw.split(",", -1);
+            if (parts.length != 3) {
+                throw new MatouParseException("E_MATOU_TYPE", line, raw);
+            }
+            List<Object> out = new ArrayList<Object>();
+            for (String p : parts) {
+                String e = p.trim();
+                if (match(P_INT, e) == null) {
+                    throw new MatouParseException("E_MATOU_TYPE", line, raw);
+                }
+                try {
+                    out.add(Long.valueOf(e));
+                } catch (NumberFormatException ex) {
+                    throw new MatouParseException("E_MATOU_TYPE", line, raw);
+                }
+            }
+            return out;
+        }
+        Matcher m = match(P_FQID, raw);
         if (m == null) {
             throw new MatouParseException("E_MATOU_TYPE", line, raw);
         }

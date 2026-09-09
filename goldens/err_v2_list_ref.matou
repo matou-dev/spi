@@ -1,0 +1,11 @@
+syntax 2
+namespace a.b
+
+genre Block : Data
+field hardness : f32
+
+genre Feature : Data
+field palette : list<block_ref>
+
+feature f1
+  palette = [a.b:ghost]

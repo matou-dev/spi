@@ -1,0 +1,43 @@
+{
+  "genres": {
+    "Block": {
+      "anchor": "vec3",
+      "hardness": "f32",
+      "level": "i32",
+      "tags": "list<string>",
+      "tiers": "list<u32>"
+    },
+    "Feature": {
+      "at": "vec3",
+      "counts": "list<i32>",
+      "notes": "list<string>",
+      "palette": "list<block_ref>"
+    }
+  },
+  "imports": [],
+  "instances": [
+    {
+      "decl": "Block",
+      "fields": {
+        "anchor": [1, -2, 300],
+        "hardness": 2.5,
+        "level": -3,
+        "tags": ["solid", "hot, dense", "ore"],
+        "tiers": [1, 20, 300]
+      },
+      "name": "probe_stone"
+    },
+    {
+      "decl": "Feature",
+      "fields": {
+        "at": [0, 64, -8],
+        "counts": [-1, 0, 7],
+        "notes": [],
+        "palette": ["v2.probe:probe_stone"]
+      },
+      "name": "probe_vein"
+    }
+  ],
+  "namespace": "v2.probe",
+  "syntax": 2
+}

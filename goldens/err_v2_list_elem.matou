@@ -1,0 +1,8 @@
+syntax 2
+namespace a.b
+
+genre Block : Data
+field tiers : list<u32>
+
+block stone
+  tiers = [1, nope, 3]
