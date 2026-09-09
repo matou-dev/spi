@@ -7,6 +7,8 @@ https://github.com/matou-dev/spi/releases.
 
 ## [Unreleased]
 
+- CI: runner pinned (`ubuntu-24.04`), JDK 21 via `setup-java` (temurin),
+  actions pinned by SHA with Dependabot.
 - Docs: README rewritten in English (R3 hygiene).
 
 ## [1.0.0] - 2026-09-09
