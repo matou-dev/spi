@@ -12,3 +12,8 @@ if [ -n "$hits" ]; then
 fi
 echo "ok (zero-mc-import)"
 python3 "$(dirname "$0")/check_goldens.py"
+# M1 skeleton gate : self-test Java 8, zero dep (IDs, Job seam, RNG adressé).
+mkdir -p java/build
+javac --release 8 -d java/build $(find java/src -name '*.java')
+javac --release 8 -cp java/build -d java/build $(find java/test -name '*.java')
+java -cp java/build fr.iamacat.spi.SkeletonCheck
