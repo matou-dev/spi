@@ -1,11 +1,12 @@
-# matou-spi — core SPI (zéro Minecraft)
+# matou-spi — core SPI (zero Minecraft)
 
-Contrat pur du scratch disloqué : types, IDs `ns:name`, registries multi-slot,
-seam d'exécution (`Job` pur sur snapshot + `apply` sur tick), RNG adressé.
-**Aucun import `net.minecraft` / `cpw.mods` / `net.minecraftforge` ici —
-le gate `check` casse sinon.** Seul `bridge-*` traduit vers un MC donné.
+Pure contract of the dislocated scratch: types, `ns:name` IDs, multi-slot
+registries, execution seam (pure `Job` on snapshot + `apply` on tick),
+addressed RNG.
+**No `net.minecraft` / `cpw.mods` / `net.minecraftforge` import here —
+the `check` gate breaks otherwise.** Only `bridge-*` translates to a given MC.
 
-Skeleton M1 : `MatouId`, `MatouRng`, `Snapshot` + `MatouJob`
+M1 skeleton: `MatouId`, `MatouRng`, `Snapshot` + `MatouJob`
 (`java/src/fr.iamacat.spi`), self-test `java/test`, gate `tools/check.sh`.
 
-Voir `NAMES.md` (SSOT identifiants) et l'org : https://github.com/matou-dev.
+See `NAMES.md` (identifier SSOT) and the org: https://github.com/matou-dev.
