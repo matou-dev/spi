@@ -7,6 +7,11 @@ https://github.com/matou-dev/spi/releases.
 
 ## [Unreleased]
 
+- Shared apply seam `fr.iamacat.bridge` (v1.1.0): `SpiBridge`, `CellSink`,
+  `ForgeCells`, `ForgeSnapshot`, `ForgeContent`, `Packs` moved up from
+  `bridge-1710` at identical FQNs (zero MC, only `matou-spi` deps);
+  self-test `BridgeCheck` moves with them. `bridge-*` repos consume the
+  seam from here and carry only their Forge side.
 - `ContentPack` doc now names both decided cell shapes (`"x,z"` plane
   cells and `"x,y,z:ns:block"` V3 volume cells carrying their own y and
   block); the `"x,z"`-only wording went false when example1 wired its
