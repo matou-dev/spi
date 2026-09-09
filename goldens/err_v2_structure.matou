@@ -1,0 +1,4 @@
+syntax 2
+namespace a.b
+
+genre Structure : Data

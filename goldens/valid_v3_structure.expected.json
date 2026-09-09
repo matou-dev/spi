@@ -1,0 +1,48 @@
+{
+  "genres": {
+    "Block": {
+      "hardness": "f32"
+    },
+    "Structure": {
+      "anchor": "vec3",
+      "count": "u32",
+      "palette": "list<block_ref>",
+      "parts": "list<structure_ref>",
+      "size": "vec3"
+    }
+  },
+  "imports": [],
+  "instances": [
+    {
+      "decl": "Block",
+      "fields": {
+        "hardness": 4.0
+      },
+      "name": "hut_wall"
+    },
+    {
+      "decl": "Structure",
+      "fields": {
+        "anchor": [0, 64, 0],
+        "count": 1,
+        "palette": ["v3.works:hut_wall"],
+        "parts": [],
+        "size": [3, 3, 3]
+      },
+      "name": "well"
+    },
+    {
+      "decl": "Structure",
+      "fields": {
+        "anchor": [10, 64, -4],
+        "count": 2,
+        "palette": ["v3.works:hut_wall"],
+        "parts": ["v3.works:well"],
+        "size": [5, 4, 5]
+      },
+      "name": "hut"
+    }
+  ],
+  "namespace": "v3.works",
+  "syntax": 3
+}

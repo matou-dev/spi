@@ -1,0 +1,29 @@
+syntax 3
+namespace v3.works
+
+genre Block : Data
+field hardness : f32
+
+genre Structure : Data
+field anchor : vec3
+field size : vec3
+field palette : list<block_ref>
+field parts : list<structure_ref>
+field count : u32
+
+block hut_wall
+  hardness = 4.0
+
+structure well
+  anchor = 0, 64, 0
+  size = 3, 3, 3
+  palette = [v3.works:hut_wall]
+  parts = []
+  count = 1
+
+structure hut
+  anchor = 10, 64, -4
+  size = 5, 4, 5
+  palette = [v3.works:hut_wall]
+  parts = [v3.works:well]
+  count = 2

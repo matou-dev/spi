@@ -7,6 +7,14 @@ https://github.com/matou-dev/spi/releases.
 
 ## [Unreleased]
 
+- SYNTAX-V3 structure genre (`spec/SYNTAX-V3.md`, frozen; V1/V2 untouched):
+  `anchor`/`size` (vec3), `palette` (list\<block_ref\>), `parts`
+  (list\<structure_ref\>, empty = leaf), `count` (u32). Semantic validation
+  (non-positive size, empty palette) belongs to deciding jobs, as with
+  `feature.count`. Both parsers accept `syntax 1|2|3` with version-gated
+  genres (`Structure`/`structure_ref` in older files stay refused loudly).
+- Goldens: 18 shared py+java (`valid_v3_structure`, `err_v3_structure_field`,
+  `err_v2_structure`, `err_v2_structref`; `err_version` now probes `syntax 4`).
 - SYNTAX-V2 foundation types (`spec/SYNTAX-V2.md`, frozen; V1 untouched):
   `i32`, `vec3`, `list<T>` (v2-only, no new genre, no new error codes).
   Both parsers accept `syntax 1|2` and report it in the tree; anything else

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Reference parser for SYNTAX-V1/V2 (spec: spec/SYNTAX-V1.md,
-spec/SYNTAX-V2.md).
+"""Reference parser for SYNTAX-V1/V2/V3 (spec: spec/SYNTAX-V1.md,
+spec/SYNTAX-V2.md, spec/SYNTAX-V3.md).
 
 Single tokenizer + single recursive-descent-free state machine (line-oriented).
 Fail-fast: first error wins, always `CODE:LINE`. No Minecraft imports.
@@ -10,14 +10,19 @@ import re
 import sys
 
 GENRES_V1 = ("block", "item", "mob", "feature")
-GENRE_DECL = {g: g.capitalize() for g in GENRES_V1}  # block -> Block
+GENRES_V3 = GENRES_V1 + ("structure",)
 RESERVED = {"syntax", "namespace", "from", "use", "genre", "field",
             "true", "false"}
 SCALARS_V1 = ("f32", "u32", "bool", "string")
 SCALARS_V2_ONLY = ("i32", "vec3")
 
 
+def allowed_genres(syntax):
+    return GENRES_V3 if syntax >= 3 else GENRES_V1
+
+
 def valid_type(ftyp, syntax):
+    genres = allowed_genres(syntax)
     if ftyp in SCALARS_V1:
         return True
     if syntax >= 2 and ftyp in SCALARS_V2_ONLY:
@@ -26,8 +31,8 @@ def valid_type(ftyp, syntax):
         inner = ftyp[5:-1]
         return (inner in SCALARS_V1 or inner in SCALARS_V2_ONLY
                 or (inner.endswith("_ref")
-                    and inner[:-4] in GENRES_V1))
-    if ftyp.endswith("_ref") and ftyp[:-4] in GENRES_V1:
+                    and inner[:-4] in genres))
+    if ftyp.endswith("_ref") and ftyp[:-4] in genres:
         return True
     return False
 
@@ -66,10 +71,11 @@ def parse_file(path):
 
     # --- syntax header: first significant line, exact ---
     n, l = lines[0]
-    m = re.fullmatch(r"syntax ([12])", l)
+    m = re.fullmatch(r"syntax ([123])", l)
     if m is None:
         raise Err("E_MATOU_VERSION", n, l)
     syntax = int(m.group(1))
+    decls = {g.capitalize() for g in allowed_genres(syntax)}
     pos = 1
 
     namespace, imports = None, set()
@@ -123,7 +129,7 @@ def parse_file(path):
             if m is None:
                 raise Err("E_MATOU_GENRE", n, l)
             decl = m.group(1)
-            if decl not in GENRE_DECL.values():
+            if decl not in decls:
                 raise Err("E_MATOU_GENRE", n, decl)
             if decl in genres:
                 raise Err("E_MATOU_GENRE", n, "duplicate " + decl)
@@ -148,9 +154,7 @@ def parse_file(path):
             gword, iname = m.group(1), m.group(2)
             if gword in RESERVED:
                 raise Err("E_MATOU_HEADER", n, l)
-            decl = next((d for d, low in
-                         ((d, d.lower()) for d in GENRE_DECL.values())
-                         if low == gword), None)
+            decl = next((d for d in decls if d.lower() == gword), None)
             if decl is None or decl not in genres:
                 raise Err("E_MATOU_GENRE", n, gword)
             if namespace is None:

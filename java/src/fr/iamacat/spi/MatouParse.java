@@ -16,17 +16,22 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Reference parser for SYNTAX-V1/V2 (spec: spec/SYNTAX-V1.md,
- * spec/SYNTAX-V2.md).
+ * Reference parser for SYNTAX-V1/V2/V3 (spec: spec/SYNTAX-V1.md,
+ * spec/SYNTAX-V2.md, spec/SYNTAX-V3.md).
  * Java port of parser/matou_parse.py — the goldens are the shared oracle:
  * both implementations must agree. Zero Minecraft imports. Java 8 bytecode.
  */
 public final class MatouParse {
     private static final String[] GENRES_V1 = {"block", "item", "mob", "feature"};
+    private static final String[] GENRES_V3 =
+            {"block", "item", "mob", "feature", "structure"};
 
     // Table-driven lookup: word -> Decl (block -> Block), reserved words,
-    // scalar types. Single derivation point for the closed V1 vocabularies.
-    private static final Map<String, String> DECL_BY_WORD = new HashMap<String, String>();
+    // scalar types. Single derivation point for the version-gated vocabularies.
+    private static final Map<String, String> DECL_BY_WORD_V1 =
+            new HashMap<String, String>();
+    private static final Map<String, String> DECL_BY_WORD_V3 =
+            new HashMap<String, String>();
     private static final Set<String> RESERVED = new HashSet<String>(Arrays.asList(
             "syntax", "namespace", "from", "use", "genre", "field",
             "true", "false"));
@@ -37,7 +42,7 @@ public final class MatouParse {
 
     // Precompiled once: the hot line classifiers below must not recompile.
     private static final Pattern P_SYNTAX =
-            Pattern.compile("syntax ([12])");
+            Pattern.compile("syntax ([123])");
     private static final Pattern P_NAMESPACE =
             Pattern.compile("namespace ([A-Za-z_][A-Za-z0-9_.]*)");
     private static final Pattern P_FROM =
@@ -57,7 +62,11 @@ public final class MatouParse {
 
     static {
         for (String g : GENRES_V1) {
-            DECL_BY_WORD.put(g,
+            DECL_BY_WORD_V1.put(g,
+                    Character.toUpperCase(g.charAt(0)) + g.substring(1));
+        }
+        for (String g : GENRES_V3) {
+            DECL_BY_WORD_V3.put(g,
                     Character.toUpperCase(g.charAt(0)) + g.substring(1));
         }
     }
@@ -68,8 +77,8 @@ public final class MatouParse {
         return RESERVED.contains(w);
     }
 
-    private static String declOf(String gword) {
-        return DECL_BY_WORD.get(gword);
+    private static String declOf(String gword, int syntax) {
+        return (syntax >= 3 ? DECL_BY_WORD_V3 : DECL_BY_WORD_V1).get(gword);
     }
 
     private static final class Line {
@@ -201,8 +210,8 @@ public final class MatouParse {
                     throw new MatouParseException("E_MATOU_GENRE", n, l);
                 }
                 String decl = m.group(1);
-                if (declOf(decl.toLowerCase()) == null
-                        || !declOf(decl.toLowerCase()).equals(decl)) {
+                if (declOf(decl.toLowerCase(), syntax) == null
+                        || !declOf(decl.toLowerCase(), syntax).equals(decl)) {
                     throw new MatouParseException("E_MATOU_GENRE", n, decl);
                 }
                 if (genres.containsKey(decl)) {
@@ -240,7 +249,7 @@ public final class MatouParse {
                 if (isReserved(gword)) {
                     throw new MatouParseException("E_MATOU_HEADER", n, l);
                 }
-                String decl = declOf(gword);
+                String decl = declOf(gword, syntax);
                 if (decl == null || !genres.containsKey(decl)) {
                     throw new MatouParseException("E_MATOU_GENRE", n, gword);
                 }
@@ -309,13 +318,13 @@ public final class MatouParse {
         }
     }
 
-    private static boolean validScalarOrRef(String t) {
+    private static boolean validScalarOrRef(String t, int syntax) {
         if (SCALARS_V1.contains(t) || SCALARS_V2_ONLY.contains(t)) {
             return true;
         }
         if (t.endsWith("_ref")) {
             String g = t.substring(0, t.length() - 4);
-            return declOf(g) != null;
+            return declOf(g, syntax) != null;
         }
         return false;
     }
@@ -329,11 +338,11 @@ public final class MatouParse {
                 return true;
             }
             if (t.startsWith("list<") && t.endsWith(">")) {
-                return validScalarOrRef(t.substring(5, t.length() - 1));
+                return validScalarOrRef(t.substring(5, t.length() - 1), syntax);
             }
         }
         return t.endsWith("_ref")
-                && declOf(t.substring(0, t.length() - 4)) != null;
+                && declOf(t.substring(0, t.length() - 4), syntax) != null;
     }
 
     private static Object parseValue(String raw, String typ, int line,
