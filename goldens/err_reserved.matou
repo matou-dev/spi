@@ -1,0 +1,8 @@
+syntax 1
+namespace a.b
+
+genre Block : Data
+field hardness : f32
+
+block true
+  hardness = 1.0

@@ -1,0 +1,59 @@
+{
+  "genres": {
+    "Block": {
+      "hardness": "f32",
+      "opaque": "bool"
+    },
+    "Feature": {
+      "block": "block_ref",
+      "count": "u32"
+    },
+    "Item": {
+      "label": "string",
+      "stack": "u32"
+    },
+    "Mob": {
+      "drop": "item_ref",
+      "hp": "u32"
+    }
+  },
+  "imports": [
+    "matou.blocks"
+  ],
+  "instances": [
+    {
+      "decl": "Block",
+      "fields": {
+        "hardness": 3.0,
+        "opaque": true
+      },
+      "name": "my_ore"
+    },
+    {
+      "decl": "Item",
+      "fields": {
+        "label": "shiny",
+        "stack": 64
+      },
+      "name": "my_gem"
+    },
+    {
+      "decl": "Mob",
+      "fields": {
+        "drop": "example1.common:my_gem",
+        "hp": 20
+      },
+      "name": "my_beast"
+    },
+    {
+      "decl": "Feature",
+      "fields": {
+        "block": "example1.common:my_ore",
+        "count": 8
+      },
+      "name": "my_vein"
+    }
+  ],
+  "namespace": "example1.common",
+  "syntax": 1
+}

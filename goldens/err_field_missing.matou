@@ -1,0 +1,9 @@
+syntax 1
+namespace a.b
+
+genre Block : Data
+field hardness : f32
+field opaque : bool
+
+block stone
+  hardness = 1.5

@@ -1,0 +1,16 @@
+syntax 1
+namespace a.b
+
+genre Item : Data
+field stack : u32
+
+genre Mob : Data
+field hp : u32
+field drop : item_ref
+
+item gem
+  stack = 64
+
+mob beast
+  hp = 20
+  drop = elsewhere:fang

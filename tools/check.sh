@@ -11,3 +11,4 @@ if [ -n "$hits" ]; then
   exit 1
 fi
 echo "ok (zero-mc-import)"
+python3 "$(dirname "$0")/check_goldens.py"

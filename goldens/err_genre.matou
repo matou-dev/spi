@@ -1,0 +1,3 @@
+syntax 1
+namespace a.b
+vehicle car

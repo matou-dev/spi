@@ -42,6 +42,12 @@ block my_ore
 - Types : `f32`, `u32`, `bool`, `string`, `<ns>:<genre>_ref`.
 - Instance : `<genre-lower> <name>` + champs `name = value`, un par ligne.
 - Champ manquant ou inconnu = `E_MATOU_FIELD`. Type faux = `E_MATOU_TYPE`.
+  Référence vers namespace ni local ni importé, ou vers instance locale
+  inexistante = `E_MATOU_UNKNOWN_REF`. Header malformé, namespace manquant
+  ou dupliqué, instance avant namespace = `E_MATOU_HEADER`. Indentation
+  autre que 2 espaces, ou champ hors instance = `E_MATOU_INDENT`.
+- Parser fail-fast : la première erreur gagne, sortie `CODE:LINE`
+  (+ message humain après, non contractuel).
 
 Genres v1 : `block`, `item`, `mob`, `feature`. Tout autre genre =
 `E_MATOU_GENRE` (pas de fallback, pas de skip silencieux).
