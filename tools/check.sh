@@ -20,3 +20,4 @@ javac --release 8 -cp java/build -d java/build $(find java/test -name '*.java')
 java -cp java/build fr.iamacat.spi.SkeletonCheck
 java -cp java/build fr.iamacat.spi.VocabularyCheck
 java -cp java/build fr.iamacat.bridge.BridgeCheck
+java -cp java/build fr.iamacat.spi.render.RenderPlanCheck
