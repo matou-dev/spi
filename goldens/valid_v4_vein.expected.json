@@ -1,0 +1,35 @@
+{
+  "genres": {
+    "Block": {
+      "hardness": "f32"
+    },
+    "Vein": {
+      "block": "block_ref",
+      "count": "u32",
+      "seed": "i32",
+      "size": "vec3"
+    }
+  },
+  "imports": [],
+  "instances": [
+    {
+      "decl": "Block",
+      "fields": {
+        "hardness": 4.0
+      },
+      "name": "hard_stone"
+    },
+    {
+      "decl": "Vein",
+      "fields": {
+        "block": "v4.works:hard_stone",
+        "count": 2,
+        "seed": -7,
+        "size": [3, 2, 3]
+      },
+      "name": "main_vein"
+    }
+  ],
+  "namespace": "v4.works",
+  "syntax": 4
+}

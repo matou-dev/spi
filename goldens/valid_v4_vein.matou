@@ -1,0 +1,20 @@
+syntax 4
+namespace v4.works
+
+genre Block : Data
+field hardness : f32
+
+genre Vein : Data
+field block : block_ref
+field count : u32
+field size : vec3
+field seed : i32
+
+block hard_stone
+  hardness = 4.0
+
+vein main_vein
+  block = v4.works:hard_stone
+  count = 2
+  size = 3, 2, 3
+  seed = -7

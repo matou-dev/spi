@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Reference parser for SYNTAX-V1/V2/V3 (spec: spec/SYNTAX-V1.md,
-spec/SYNTAX-V2.md, spec/SYNTAX-V3.md).
+"""Reference parser for SYNTAX-V1/V2/V3/V4 (spec: spec/SYNTAX-V1.md,
+spec/SYNTAX-V2.md, spec/SYNTAX-V3.md, spec/SYNTAX-V4.md).
 
 Single tokenizer + single recursive-descent-free state machine (line-oriented).
 Fail-fast: first error wins, always `CODE:LINE`. No Minecraft imports.
@@ -11,6 +11,7 @@ import sys
 
 GENRES_V1 = ("block", "item", "mob", "feature")
 GENRES_V3 = GENRES_V1 + ("structure",)
+GENRES_V4 = GENRES_V3 + ("vein",)
 RESERVED = {"syntax", "namespace", "from", "use", "genre", "field",
             "true", "false"}
 SCALARS_V1 = ("f32", "u32", "bool", "string")
@@ -18,6 +19,8 @@ SCALARS_V2_ONLY = ("i32", "vec3")
 
 
 def allowed_genres(syntax):
+    if syntax >= 4:
+        return GENRES_V4
     return GENRES_V3 if syntax >= 3 else GENRES_V1
 
 
@@ -71,7 +74,7 @@ def parse_file(path):
 
     # --- syntax header: first significant line, exact ---
     n, l = lines[0]
-    m = re.fullmatch(r"syntax ([123])", l)
+    m = re.fullmatch(r"syntax ([1234])", l)
     if m is None:
         raise Err("E_MATOU_VERSION", n, l)
     syntax = int(m.group(1))

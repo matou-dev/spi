@@ -7,6 +7,12 @@ https://github.com/matou-dev/spi/releases.
 
 ## [Unreleased]
 
+- SYNTAX-V4 (`spec/SYNTAX-V4.md`, delta only, V1..V3 untouched): `vein`
+  genre (v4-only, `block:block_ref`, `count:u32`, `size:vec3`,
+  `seed:i32`, zero new types), both parsers accept `syntax 1..4`,
+  `err_version` golden now probes `syntax 5`, new goldens
+  `valid_v4_vein` + `err_v3_vein` (20 goldens, py+java green).
+
 ## [1.2.0] - 2026-09-09
 
 Source release: https://github.com/matou-dev/spi/releases/tag/v1.2.0
