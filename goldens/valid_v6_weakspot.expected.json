@@ -1,0 +1,57 @@
+{
+  "genres": {
+    "Mob": {
+      "hp": "u32",
+      "reach": "f32"
+    },
+    "Weakspot": {
+      "mob": "mob_ref",
+      "mult": "f32"
+    }
+  },
+  "imports": [],
+  "instances": [
+    {
+      "decl": "Mob",
+      "fields": {
+        "hp": 20,
+        "reach": 4.0
+      },
+      "name": "my_beast"
+    },
+    {
+      "decl": "Mob",
+      "fields": {
+        "hp": 30,
+        "reach": 5.0
+      },
+      "name": "my_brute"
+    },
+    {
+      "decl": "Weakspot",
+      "fields": {
+        "mob": "v6.works:my_beast",
+        "mult": 2.0
+      },
+      "name": "head"
+    },
+    {
+      "decl": "Weakspot",
+      "fields": {
+        "mob": "v6.works:my_brute",
+        "mult": 3.0
+      },
+      "name": "head"
+    },
+    {
+      "decl": "Weakspot",
+      "fields": {
+        "mob": "v6.works:my_brute",
+        "mult": 1.0
+      },
+      "name": "arm"
+    }
+  ],
+  "namespace": "v6.works",
+  "syntax": 6
+}

@@ -16,9 +16,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Reference parser for SYNTAX-V1/V2/V3/V4/V5 (spec: spec/SYNTAX-V1.md,
+ * Reference parser for SYNTAX-V1/V2/V3/V4/V5/V6 (spec: spec/SYNTAX-V1.md,
  * spec/SYNTAX-V2.md, spec/SYNTAX-V3.md, spec/SYNTAX-V4.md,
- * spec/SYNTAX-V5.md).
+ * spec/SYNTAX-V5.md, spec/SYNTAX-V6.md).
  * Java port of parser/matou_parse.py — the goldens are the shared oracle:
  * both implementations must agree. Zero Minecraft imports. Java 8 bytecode.
  */
@@ -52,7 +52,7 @@ public final class MatouParse {
 
     // Precompiled once: the hot line classifiers below must not recompile.
     private static final Pattern P_SYNTAX =
-            Pattern.compile("syntax ([12345])");
+            Pattern.compile("syntax ([123456])");
     private static final Pattern P_NAMESPACE =
             Pattern.compile("namespace ([A-Za-z_][A-Za-z0-9_.]*)");
     private static final Pattern P_FROM =
@@ -284,10 +284,16 @@ public final class MatouParse {
                 if (isReserved(iname)) {
                     throw new MatouParseException("E_MATOU_RESERVED", n, iname);
                 }
-                for (Shell s : shells) {
-                    if (s.decl.equals(decl) && s.name.equals(iname)) {
-                        throw new MatouParseException("E_MATOU_FIELD", n,
-                                "duplicate " + iname);
+                // V6 weakspots join per-mob (spec/SYNTAX-V6.md): the same
+                // bone may fund several mobs, so uniqueness is (mob, bone)
+                // at decide time — the header-time (decl, name) check is
+                // skipped here.
+                if (!(syntax >= 6 && decl.equals("Weakspot"))) {
+                    for (Shell s : shells) {
+                        if (s.decl.equals(decl) && s.name.equals(iname)) {
+                            throw new MatouParseException("E_MATOU_FIELD", n,
+                                    "duplicate " + iname);
+                        }
                     }
                 }
                 pending = new Shell(decl, iname);

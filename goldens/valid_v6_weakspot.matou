@@ -1,0 +1,30 @@
+syntax 6
+namespace v6.works
+
+genre Mob : Data
+field hp : u32
+field reach : f32
+
+genre Weakspot : Data
+field mult : f32
+field mob : mob_ref
+
+mob my_beast
+  hp = 20
+  reach = 4.0
+
+mob my_brute
+  hp = 30
+  reach = 5.0
+
+weakspot head
+  mult = 2.0
+  mob = v6.works:my_beast
+
+weakspot head
+  mult = 3.0
+  mob = v6.works:my_brute
+
+weakspot arm
+  mult = 1.0
+  mob = v6.works:my_brute

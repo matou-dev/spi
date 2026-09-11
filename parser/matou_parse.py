@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Reference parser for SYNTAX-V1/V2/V3/V4/V5 (spec: spec/SYNTAX-V1.md,
+"""Reference parser for SYNTAX-V1/V2/V3/V4/V5/V6 (spec: spec/SYNTAX-V1.md,
 spec/SYNTAX-V2.md, spec/SYNTAX-V3.md, spec/SYNTAX-V4.md,
-spec/SYNTAX-V5.md).
+spec/SYNTAX-V5.md, spec/SYNTAX-V6.md).
 
 Single tokenizer + single recursive-descent-free state machine (line-oriented).
 Fail-fast: first error wins, always `CODE:LINE`. No Minecraft imports.
@@ -78,7 +78,7 @@ def parse_file(path):
 
     # --- syntax header: first significant line, exact ---
     n, l = lines[0]
-    m = re.fullmatch(r"syntax ([12345])", l)
+    m = re.fullmatch(r"syntax ([123456])", l)
     if m is None:
         raise Err("E_MATOU_VERSION", n, l)
     syntax = int(m.group(1))
@@ -168,9 +168,13 @@ def parse_file(path):
                 raise Err("E_MATOU_HEADER", n, "instance before namespace")
             if iname in RESERVED:
                 raise Err("E_MATOU_RESERVED", n, iname)
-            if any(i["decl"] == decl and i["name"] == iname
-                   for i in instances):
-                raise Err("E_MATOU_FIELD", n, "duplicate " + iname)
+            # V6 weakspots join per-mob (spec/SYNTAX-V6.md): the same bone
+            # may fund several mobs, so uniqueness is (mob, bone) at decide
+            # time — the header-time (decl, name) check is skipped here.
+            if not (syntax >= 6 and decl == "Weakspot"):
+                if any(i["decl"] == decl and i["name"] == iname
+                       for i in instances):
+                    raise Err("E_MATOU_FIELD", n, "duplicate " + iname)
             pending = {"decl": decl, "name": iname, "fields": {}, "raw": []}
             open_genre = None
         pos += 1

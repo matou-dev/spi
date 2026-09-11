@@ -2,6 +2,7 @@ package fr.iamacat.spi;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * T4 pack-driven policy contract (hub
@@ -17,6 +18,11 @@ import java.util.Map;
  * of the served numbers, and runs the served jobs. Serving time is wire
  * time (parse-once, beside the tables — never on the tick path). Java 8,
  * zero deps.
+ *
+ * <p>Combat is per-mob since syntax {@code spec/SYNTAX-V6.md}: every
+ * weakspot funds one {@code (mob, bone)} pair, so the combat views come
+ * in per-mob accessors plus the legacy sole-mob views (which refuse
+ * unless exactly one mob is sealed).
  */
 public interface PolicyPack extends VocabularyPack {
     /**
@@ -67,6 +73,30 @@ public interface PolicyPack extends VocabularyPack {
     long spawnYMax();
 
     /**
+     * Combat mobs: short instance names of every sealed content mob, in
+     * file order. Unmodifiable, never null, never empty.
+     */
+    Set<String> combatMobs();
+
+    /**
+     * Combat weakspot table for one mob: bone name to damage multiplier,
+     * served from the content weakspot rows funding {@code mob} (hub
+     * {@code decisions/VIRTUAL_HITBOXES.md} combat-policy tranche, syntax
+     * {@code spec/SYNTAX-V6.md}). Insertion-ordered, unmodifiable, never
+     * null; multipliers positive and finite. Loud on null/unknown mob —
+     * never defaulted.
+     */
+    Map<String, Float> combatWeakspots(String mob);
+
+    /**
+     * Combat reach attribute for one mob: eye-to-hitVec cutoff for the
+     * bone ray-test, served from that mob's {@code reach} field.
+     * Positive and finite, never defaulted. Loud on null/unknown mob.
+     * No operator override in v1 (same split as {@link #spawnHp()}).
+     */
+    double combatReach(String mob);
+
+    /**
      * Combat weakspot table: bone name to damage multiplier, served from
      * the content weakspot table (hub {@code decisions/VIRTUAL_HITBOXES.md}
      * combat-policy tranche, syntax {@code spec/SYNTAX-V5.md}). The
@@ -74,6 +104,8 @@ public interface PolicyPack extends VocabularyPack {
      * Insertion-ordered, unmodifiable, never null, never empty; multipliers
      * positive and finite (a table nobody pays would be a silent no-op —
      * the bridge refines delivered hurts by these, it never defaults).
+     * Sole-mob view: refuses unless exactly one mob is sealed (use
+     * {@link #combatWeakspots(String)} per mob).
      */
     Map<String, Float> combatWeakspots();
 
@@ -84,6 +116,8 @@ public interface PolicyPack extends VocabularyPack {
      * never defaulted. No operator override in v1 (same split as
      * {@link #spawnHp()}: the spec field ships with a live reader, the
      * override is a named follow-up, never a quiet fallback).
+     * Sole-mob view: refuses unless exactly one mob is sealed (use
+     * {@link #combatReach(String)} per mob).
      */
     double combatReach();
 
