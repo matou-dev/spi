@@ -23,6 +23,13 @@ import java.util.Set;
  * weakspot funds one {@code (mob, bone)} pair, so the combat views come
  * in per-mob accessors plus the legacy sole-mob views (which refuse
  * unless exactly one mob is sealed).
+ *
+ * <p>Spawn is per-mob since the second-beast tranche (hub
+ * {@code decisions/VIRTUAL_HITBOXES.md}, spawn policy hub
+ * {@code decisions/SPAWN.md}): every mob funds its own hp/cap/budget/y
+ * band, so the spawn views come in per-mob accessors plus the legacy
+ * sole-mob views below (which content implements; their contract is
+ * unchanged here).
  */
 public interface PolicyPack extends VocabularyPack {
     /**
@@ -71,6 +78,55 @@ public interface PolicyPack extends VocabularyPack {
 
     /** Authorial spawn ordinate ceiling (0 {@code <=} yMin {@code <=} yMax). */
     long spawnYMax();
+
+    /**
+     * Spawn mobs: short instance names of every sealed content mob, in
+     * file order (hub {@code decisions/SPAWN.md}, second-beast tranche
+     * of hub {@code decisions/VIRTUAL_HITBOXES.md}, mirroring
+     * {@link #combatMobs()}). Unmodifiable, never null, never empty.
+     */
+    Set<String> spawnMobs();
+
+    /**
+     * Spec hp for one mob (positive), landed on that beast's max health
+     * (hub {@code decisions/SPAWN.md} hp tranche, second-beast tranche
+     * of hub {@code decisions/VIRTUAL_HITBOXES.md}). Never defaulted.
+     * Loud on null/unknown mob. No operator override in v1 (damage
+     * balance is content, same split as {@link #spawnHp()}).
+     */
+    long spawnHp(String mob);
+
+    /**
+     * Authorial living cap for one mob (positive): a full census lands
+     * nothing (hub {@code decisions/SPAWN.md}, second-beast tranche of
+     * hub {@code decisions/VIRTUAL_HITBOXES.md}). Never defaulted. Loud
+     * on null/unknown mob.
+     */
+    long spawnCap(String mob);
+
+    /**
+     * Authorial landings per tick for one mob while room remains
+     * (positive; hub {@code decisions/SPAWN.md}, second-beast tranche
+     * of hub {@code decisions/VIRTUAL_HITBOXES.md}). Never defaulted.
+     * Loud on null/unknown mob.
+     */
+    long spawnBudget(String mob);
+
+    /**
+     * Authorial spawn ordinate floor for one mob (0 {@code <=} yMin
+     * {@code <=} yMax; hub {@code decisions/SPAWN.md}, second-beast
+     * tranche of hub {@code decisions/VIRTUAL_HITBOXES.md}). Never
+     * defaulted. Loud on null/unknown mob.
+     */
+    long spawnYMin(String mob);
+
+    /**
+     * Authorial spawn ordinate ceiling for one mob (0 {@code <=} yMin
+     * {@code <=} yMax; hub {@code decisions/SPAWN.md}, second-beast
+     * tranche of hub {@code decisions/VIRTUAL_HITBOXES.md}). Never
+     * defaulted. Loud on null/unknown mob.
+     */
+    long spawnYMax(String mob);
 
     /**
      * Combat mobs: short instance names of every sealed content mob, in

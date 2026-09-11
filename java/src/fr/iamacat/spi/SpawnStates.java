@@ -20,7 +20,14 @@ public final class SpawnStates {
 
     /** Living census role: entity id to spawn cell. */
     public static final String CENSUS = "census";
-    /** Spawn table role: the content mob ref every spawn carries. */
+    /**
+     * Spawn table role: the content mob ref every spawn carries.
+     * Sole-mob seals carry the single qualified ref string; per-mob
+     * seals carry an ordered list of qualified mob refs (hub
+     * {@code decisions/SPAWN.md}, second-beast tranche of hub
+     * {@code decisions/VIRTUAL_HITBOXES.md}). The single-string shape
+     * stays valid for sole-mob seals.
+     */
     public static final String TABLE = "table";
     /** Living cap role: census at cap means no spawn. */
     public static final String CAP = "cap";
