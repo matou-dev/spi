@@ -23,3 +23,4 @@ java -cp java/build fr.iamacat.bridge.BridgeCheck
 java -cp java/build fr.iamacat.spi.render.RenderPlanCheck
 java -cp java/build fr.iamacat.spi.hit.HitCheck
 java -cp java/build fr.iamacat.spi.render.GlBackendCheck
+java -cp java/build fr.iamacat.spi.model.ModelCheck

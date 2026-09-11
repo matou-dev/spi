@@ -1,0 +1,163 @@
+package fr.iamacat.spi.model;
+
+import fr.iamacat.spi.hit.AABBd;
+import fr.iamacat.spi.hit.BoneBox;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+/**
+ * Declarative Bedrock/Blockbench model: identifier, texture grid and bones
+ * in file order. Single derivation point for the two bridge consumers:
+ * bakeMesh feeds the instanced renderer VBO, boneBoxes feeds HitTester.
+ *
+ * <p>Units: Bedrock pixels in, block units out (PX_PER_BLOCK = 16).
+ * Faces bake in bind pose, axis-aligned, CCW with outward normals —
+ * same winding as the live-proven BOX_VERTICES it replaces
+ * (bridge-1122 InstancedMeshRenderer). UVs are box-anchored planar
+ * projections of the cube rect (per-face unwrap lands in V2 with texture
+ * sampling); the V1 shader tints and ignores them.
+ *
+ * <p>Zero MC/GL imports, Java 8.
+ */
+public final class MatouModel {
+    public static final double PX_PER_BLOCK = 16.0;
+    public static final int VERTEX_STRIDE = 8;
+    public static final int VERTICES_PER_CUBE = 36;
+
+    public final String identifier;
+    public final int textureWidth;
+    public final int textureHeight;
+    public final List<ModelBone> bones;
+
+    public MatouModel(String identifier, int textureWidth, int textureHeight,
+            List<ModelBone> bones) {
+        if (identifier == null || identifier.trim().isEmpty()) {
+            throw new IllegalArgumentException("E_MODEL_IDENTIFIER:missing (want description.identifier)");
+        }
+        if (textureWidth <= 0 || textureHeight <= 0
+                || textureWidth > 4096 || textureHeight > 4096) {
+            throw new IllegalArgumentException("E_MODEL_TEXTURE:shape <"
+                    + textureWidth + "x" + textureHeight + "> (want 1..4096 each)");
+        }
+        if (bones == null) {
+            throw new NullPointerException("E_MODEL_BONE:null (want a list, possibly empty)");
+        }
+        this.identifier = identifier;
+        this.textureWidth = textureWidth;
+        this.textureHeight = textureHeight;
+        this.bones = Collections.unmodifiableList(new ArrayList<ModelBone>(bones));
+    }
+
+    public int cubeCount() {
+        int n = 0;
+        for (ModelBone b : bones) {
+            n += b.cubes.size();
+        }
+        return n;
+    }
+
+    /**
+     * Bakes every cube into 36 interleaved vertices
+     * (pos3 block units, uv2 normalized, normal3) in bone/cube order.
+     */
+    public float[] bakeMesh() {
+        float[] out = new float[cubeCount() * VERTICES_PER_CUBE * VERTEX_STRIDE];
+        int at = 0;
+        for (ModelBone b : bones) {
+            for (ModelCube c : b.cubes) {
+                at = emitCube(out, at, c);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Derives one bind-pose BoneBox per non-empty bone (union of its cubes,
+     * block units, entity-local). Bones without cubes contribute nothing.
+     */
+    public List<BoneBox> boneBoxes() {
+        List<BoneBox> out = new ArrayList<BoneBox>();
+        for (ModelBone b : bones) {
+            if (b.cubes.isEmpty()) {
+                continue;
+            }
+            double minX = Double.POSITIVE_INFINITY;
+            double minY = Double.POSITIVE_INFINITY;
+            double minZ = Double.POSITIVE_INFINITY;
+            double maxX = Double.NEGATIVE_INFINITY;
+            double maxY = Double.NEGATIVE_INFINITY;
+            double maxZ = Double.NEGATIVE_INFINITY;
+            for (ModelCube c : b.cubes) {
+                if (c.minX() < minX) {
+                    minX = c.minX();
+                }
+                if (c.minY() < minY) {
+                    minY = c.minY();
+                }
+                if (c.minZ() < minZ) {
+                    minZ = c.minZ();
+                }
+                if (c.maxX() > maxX) {
+                    maxX = c.maxX();
+                }
+                if (c.maxY() > maxY) {
+                    maxY = c.maxY();
+                }
+                if (c.maxZ() > maxZ) {
+                    maxZ = c.maxZ();
+                }
+            }
+            out.add(new BoneBox(b.name, new AABBd(minX / PX_PER_BLOCK,
+                    minY / PX_PER_BLOCK, minZ / PX_PER_BLOCK,
+                    maxX / PX_PER_BLOCK, maxY / PX_PER_BLOCK,
+                    maxZ / PX_PER_BLOCK)));
+        }
+        return Collections.unmodifiableList(out);
+    }
+
+    private int emitCube(float[] out, int at, ModelCube c) {
+        double x0 = c.minX() / PX_PER_BLOCK;
+        double y0 = c.minY() / PX_PER_BLOCK;
+        double z0 = c.minZ() / PX_PER_BLOCK;
+        double x1 = c.maxX() / PX_PER_BLOCK;
+        double y1 = c.maxY() / PX_PER_BLOCK;
+        double z1 = c.maxZ() / PX_PER_BLOCK;
+        double sx = (c.maxX() - c.minX());
+        double sy = (c.maxY() - c.minY());
+        double sz = (c.maxZ() - c.minZ());
+        // Faces: normal + 4 corners (a,b,c,d) wound so (a,b,c)+(a,c,d) face out.
+        // Corner order mirrors the live BOX_VERTICES box exactly.
+        double[][] faces = {
+            {0, 0, 1, x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1, sx, sy},
+            {0, 0, -1, x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0, sx, sy},
+            {0, 1, 0, x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0, sx, sz},
+            {0, -1, 0, x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1, sx, sz},
+            {1, 0, 0, x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1, sz, sy},
+            {-1, 0, 0, x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0, sz, sy},
+        };
+        for (double[] f : faces) {
+            double nx = f[0];
+            double ny = f[1];
+            double nz = f[2];
+            double[] cornerU = {0.0, f[15], f[15], 0.0};
+            double[] cornerV = {0.0, 0.0, f[16], f[16]};
+            double[][] p = {
+                {f[3], f[4], f[5]}, {f[6], f[7], f[8]},
+                {f[9], f[10], f[11]}, {f[12], f[13], f[14]},
+            };
+            int[] tri = {0, 1, 2, 0, 2, 3};
+            for (int k : tri) {
+                out[at++] = (float) p[k][0];
+                out[at++] = (float) p[k][1];
+                out[at++] = (float) p[k][2];
+                out[at++] = (float) ((c.uvU + cornerU[k]) / textureWidth);
+                out[at++] = (float) ((c.uvV + cornerV[k]) / textureHeight);
+                out[at++] = (float) nx;
+                out[at++] = (float) ny;
+                out[at++] = (float) nz;
+            }
+        }
+        return at;
+    }
+}
