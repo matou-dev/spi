@@ -6,6 +6,14 @@ package fr.iamacat.spi;
  * every harvest-drop subsystem honours — sealed harvests, kind-to-item
  * table, items per harvest.
  *
+ * <p>Since the distinct-drops tranche (hub {@code decisions/LOOT.md})
+ * the table carries one ore kind plus one {@code beast.<mob>} kind per
+ * sealed mob (each mob kill pays its own mob's drop), and the count
+ * carries one positive entry per table kind (each kind pays its own
+ * authorial number unless the operator {@code loot.count} wins
+ * uniformly). Single-mob tables keep the legacy two-entry shape
+ * ({@code ore} + {@code beast}, one count).
+ *
  * <p>Content-blind: only the domain roles live here, never a content
  * namespace. A content builds its vocabulary with its own namespace
  * ({@link #vocabulary}) and both its pure job and its bridge seal resolve
@@ -20,9 +28,17 @@ public final class LootStates {
 
     /** Sealed harvests role: harvest cell to harvest tick. */
     public static final String HARVESTED = "harvested";
-    /** Loot table role: harvest kind to content item ref. */
+    /**
+     * Loot table role: harvest kind to content item ref (one ore kind
+     * plus one {@code beast.<mob>} kind per sealed mob since the
+     * distinct-drops tranche).
+     */
     public static final String TABLE = "table";
-    /** Items-per-harvest role. */
+    /**
+     * Items-per-harvest role: harvest kind to positive count (one entry
+     * per table kind since the distinct-drops tranche — a kind without
+     * its count is refused, never defaulted).
+     */
     public static final String COUNT = "count";
 
     /**

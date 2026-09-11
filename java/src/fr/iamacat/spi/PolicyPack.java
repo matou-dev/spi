@@ -24,6 +24,13 @@ import java.util.Set;
  * in per-mob accessors plus the legacy sole-mob views (which refuse
  * unless exactly one mob is sealed).
  *
+ * <p>Loot is per-mob since the distinct-drops tranche (hub
+ * {@code decisions/LOOT.md}): every mob funds its own drop item ref plus
+ * its own authorial items-per-kill count, so the loot views come in
+ * per-mob accessors plus the legacy sole-mob views below (which content
+ * implements; their contract is unchanged here — they refuse unless
+ * exactly one mob is sealed).
+ *
  * <p>Spawn is per-mob since the second-beast tranche (hub
  * {@code decisions/VIRTUAL_HITBOXES.md}, spawn policy hub
  * {@code decisions/SPAWN.md}): every mob funds its own hp/cap/budget/y
@@ -36,6 +43,9 @@ public interface PolicyPack extends VocabularyPack {
      * Loot table: harvest kind to content item ref (the content item, never
      * a landable name — the bridge resolves the carrier). Insertion-ordered,
      * unmodifiable, never null, never empty; both served kinds paid.
+     * Sole-mob view: refuses unless exactly one mob is sealed (use
+     * {@link #lootDrop(String)} per mob — the ore harvest then pays the
+     * first sealed mob, each mob kill pays its own mob).
      */
     Map<String, String> lootDrops();
 
@@ -49,14 +59,51 @@ public interface PolicyPack extends VocabularyPack {
     /**
      * Harvest kind a mob kill is recorded under. Never null, never empty;
      * always a key of {@link #lootDrops()}.
+     * Sole-mob view: refuses unless exactly one mob is sealed (use
+     * {@link #lootBeastKind(String)} per mob).
      */
     String lootBeastKind();
 
     /**
+     * Loot mobs: short instance names of every sealed content mob, in
+     * file order (hub {@code decisions/LOOT.md}, distinct-drops tranche,
+     * mirroring {@link #spawnMobs()} and {@link #combatMobs()}).
+     * Unmodifiable, never null, never empty.
+     */
+    Set<String> lootMobs();
+
+    /**
+     * Content drop item ref funding one mob's kills (hub
+     * {@code decisions/LOOT.md}, distinct-drops tranche). Never null,
+     * never empty. Loud on null/unknown mob — never defaulted.
+     */
+    String lootDrop(String mob);
+
+    /**
+     * Harvest kind one mob's kills are recorded under (hub
+     * {@code decisions/LOOT.md}, distinct-drops tranche — the kill hook
+     * records the victim's mob identity, the ore harvest keeps
+     * {@link #lootOreKind()}). Never null, never empty; always paid by
+     * the per-mob table. Loud on null/unknown mob — never defaulted.
+     */
+    String lootBeastKind(String mob);
+
+    /**
      * Authorial items paid per due harvest (positive, never defaulted — the
      * bridge transports it into the seal unless the operator count wins).
+     * Sole-mob view: refuses unless exactly one mob is sealed (use
+     * {@link #lootCount(String)} per mob).
      */
     long lootCount();
+
+    /**
+     * Authorial items paid per due harvest of one mob's kills (positive,
+     * never defaulted — the bridge transports it into the seal unless the
+     * operator {@code loot.count} wins uniformly, hub
+     * {@code decisions/LOOT.md}, distinct-drops tranche). Loud on
+     * null/unknown mob — never defaulted.
+     */
+    long lootCount(String mob);
 
     /**
      * Qualified content mob ref ({@code "ns:name"} — content never names
