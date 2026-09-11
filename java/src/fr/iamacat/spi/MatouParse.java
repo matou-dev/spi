@@ -16,8 +16,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Reference parser for SYNTAX-V1/V2/V3/V4 (spec: spec/SYNTAX-V1.md,
- * spec/SYNTAX-V2.md, spec/SYNTAX-V3.md, spec/SYNTAX-V4.md).
+ * Reference parser for SYNTAX-V1/V2/V3/V4/V5 (spec: spec/SYNTAX-V1.md,
+ * spec/SYNTAX-V2.md, spec/SYNTAX-V3.md, spec/SYNTAX-V4.md,
+ * spec/SYNTAX-V5.md).
  * Java port of parser/matou_parse.py — the goldens are the shared oracle:
  * both implementations must agree. Zero Minecraft imports. Java 8 bytecode.
  */
@@ -27,6 +28,9 @@ public final class MatouParse {
             {"block", "item", "mob", "feature", "structure"};
     private static final String[] GENRES_V4 =
             {"block", "item", "mob", "feature", "structure", "vein"};
+    private static final String[] GENRES_V5 =
+            {"block", "item", "mob", "feature", "structure", "vein",
+                    "weakspot"};
 
     // Table-driven lookup: word -> Decl (block -> Block), reserved words,
     // scalar types. Single derivation point for the version-gated vocabularies.
@@ -35,6 +39,8 @@ public final class MatouParse {
     private static final Map<String, String> DECL_BY_WORD_V3 =
             new HashMap<String, String>();
     private static final Map<String, String> DECL_BY_WORD_V4 =
+            new HashMap<String, String>();
+    private static final Map<String, String> DECL_BY_WORD_V5 =
             new HashMap<String, String>();
     private static final Set<String> RESERVED = new HashSet<String>(Arrays.asList(
             "syntax", "namespace", "from", "use", "genre", "field",
@@ -46,7 +52,7 @@ public final class MatouParse {
 
     // Precompiled once: the hot line classifiers below must not recompile.
     private static final Pattern P_SYNTAX =
-            Pattern.compile("syntax ([1234])");
+            Pattern.compile("syntax ([12345])");
     private static final Pattern P_NAMESPACE =
             Pattern.compile("namespace ([A-Za-z_][A-Za-z0-9_.]*)");
     private static final Pattern P_FROM =
@@ -77,6 +83,10 @@ public final class MatouParse {
             DECL_BY_WORD_V4.put(g,
                     Character.toUpperCase(g.charAt(0)) + g.substring(1));
         }
+        for (String g : GENRES_V5) {
+            DECL_BY_WORD_V5.put(g,
+                    Character.toUpperCase(g.charAt(0)) + g.substring(1));
+        }
     }
 
     private MatouParse() {}
@@ -86,6 +96,9 @@ public final class MatouParse {
     }
 
     private static String declOf(String gword, int syntax) {
+        if (syntax >= 5) {
+            return DECL_BY_WORD_V5.get(gword);
+        }
         if (syntax >= 4) {
             return DECL_BY_WORD_V4.get(gword);
         }

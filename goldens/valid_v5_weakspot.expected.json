@@ -1,0 +1,38 @@
+{
+  "genres": {
+    "Mob": {
+      "hp": "u32",
+      "reach": "f32"
+    },
+    "Weakspot": {
+      "mult": "f32"
+    }
+  },
+  "imports": [],
+  "instances": [
+    {
+      "decl": "Mob",
+      "fields": {
+        "hp": 20,
+        "reach": 4.0
+      },
+      "name": "my_beast"
+    },
+    {
+      "decl": "Weakspot",
+      "fields": {
+        "mult": 2.0
+      },
+      "name": "head"
+    },
+    {
+      "decl": "Weakspot",
+      "fields": {
+        "mult": 1.5
+      },
+      "name": "arm"
+    }
+  ],
+  "namespace": "v5.works",
+  "syntax": 5
+}

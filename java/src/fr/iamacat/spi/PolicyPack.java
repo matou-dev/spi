@@ -67,6 +67,27 @@ public interface PolicyPack extends VocabularyPack {
     long spawnYMax();
 
     /**
+     * Combat weakspot table: bone name to damage multiplier, served from
+     * the content weakspot table (hub {@code decisions/VIRTUAL_HITBOXES.md}
+     * combat-policy tranche, syntax {@code spec/SYNTAX-V5.md}). The
+     * instance name is the bone, so keys never shadow another name.
+     * Insertion-ordered, unmodifiable, never null, never empty; multipliers
+     * positive and finite (a table nobody pays would be a silent no-op —
+     * the bridge refines delivered hurts by these, it never defaults).
+     */
+    Map<String, Float> combatWeakspots();
+
+    /**
+     * Combat reach attribute: eye-to-hitVec cutoff for the bone ray-test,
+     * served from the content mob {@code reach} field (replaces the
+     * bridge-local {@code COMBAT_REACH} constant). Positive and finite,
+     * never defaulted. No operator override in v1 (same split as
+     * {@link #spawnHp()}: the spec field ships with a live reader, the
+     * override is a named follow-up, never a quiet fallback).
+     */
+    double combatReach();
+
+    /**
      * Pure loot job deciding drops over the sealed harvests (fresh
      * equivalent per call or shared stateless instance — the job is pure,
      * so either honours the seam). Never null.

@@ -1,0 +1,4 @@
+syntax 4
+namespace a.b
+
+genre Weakspot : Data

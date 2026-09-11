@@ -1,0 +1,19 @@
+syntax 5
+namespace v5.works
+
+genre Mob : Data
+field hp : u32
+field reach : f32
+
+genre Weakspot : Data
+field mult : f32
+
+mob my_beast
+  hp = 20
+  reach = 4.0
+
+weakspot head
+  mult = 2.0
+
+weakspot arm
+  mult = 1.5
