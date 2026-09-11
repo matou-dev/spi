@@ -135,6 +135,16 @@ public interface PolicyPack extends VocabularyPack {
     Set<String> spawnMobs();
 
     /**
+     * Qualified content mob ref ({@code "ns:name"}) for one sealed mob,
+     * in the table's namespace (hub {@code decisions/SPAWN.md},
+     * qualified-view tranche — the bridge qualifies sealed shorts
+     * through this view instead of reading the file namespace off the
+     * loot drop refs). Never null, never empty. Loud on null/unknown
+     * mob — never defaulted.
+     */
+    String spawnMobRef(String mob);
+
+    /**
      * Spec hp for one mob (positive), landed on that beast's max health
      * (hub {@code decisions/SPAWN.md} hp tranche, second-beast tranche
      * of hub {@code decisions/VIRTUAL_HITBOXES.md}). Never defaulted.
