@@ -54,6 +54,7 @@ public final class ModelCheck {
         testBakeMesh();
         testWinding();
         testBoneBoxes();
+        testPlacedBoxes();
         testEmptyAndInflate();
         testRefusals();
         System.out.println("ok model-check : all declarative-model tests passed");
@@ -144,6 +145,24 @@ public final class ModelCheck {
         RayHit head = HitTester.test(boxes,
                 new Vec3d(0.0, 1.25, 5.0), new Vec3d(0.0, 0.0, -1.0), 10.0);
         check(head != null && head.boneName.equals("head"), "high ray resolves head");
+    }
+
+    private static void testPlacedBoxes() {
+        MatouModel m = MatouModelParser.parse(BEAST);
+        List<BoneBox> at = m.placedBoxes(10.0, 64.0, -3.0);
+        check(at.size() == 2, "placed keeps both bones");
+        check(Math.abs(at.get(0).box.minX - 9.5) < 1e-9
+                && Math.abs(at.get(0).box.minY - 64.0) < 1e-9
+                && Math.abs(at.get(0).box.minZ - (-3.5)) < 1e-9
+                && Math.abs(at.get(0).box.maxX - 10.5) < 1e-9
+                && Math.abs(at.get(0).box.maxY - 65.0) < 1e-9
+                && Math.abs(at.get(0).box.maxZ - (-2.5)) < 1e-9,
+                "placed body = local box + entity origin (blocks, offset after /16)");
+        // The placed head still resolves through the shared ray-tester.
+        RayHit head = HitTester.test(at,
+                new Vec3d(10.0, 65.25, 2.0), new Vec3d(0.0, 0.0, -1.0), 10.0);
+        check(head != null && head.boneName.equals("head"), "placed head hit at entity origin");
+        assertThrows(() -> m.placedBoxes(Double.NaN, 0, 0), "E_MODEL_PLACE:nan");
     }
 
     private static void testEmptyAndInflate() {

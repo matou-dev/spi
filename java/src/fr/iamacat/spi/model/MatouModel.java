@@ -77,6 +77,24 @@ public final class MatouModel {
      * block units, entity-local). Bones without cubes contribute nothing.
      */
     public List<BoneBox> boneBoxes() {
+        return shiftedBoxes(0.0, 0.0, 0.0);
+    }
+
+    /**
+     * World-space placement of {@link #boneBoxes()} at the entity origin
+     * (feet): the single translation every bridge applies instead of
+     * copying the offset loop per version. Yaw rotation stays bind-pose
+     * (see the class note) — a rotated pole lands with the animation
+     * tranche, never a per-bridge guess.
+     */
+    public List<BoneBox> placedBoxes(double x, double y, double z) {
+        if (Double.isNaN(x) || Double.isNaN(y) || Double.isNaN(z)) {
+            throw new IllegalArgumentException("E_MODEL_PLACE:nan (want a finite entity origin)");
+        }
+        return shiftedBoxes(x, y, z);
+    }
+
+    private List<BoneBox> shiftedBoxes(double x, double y, double z) {
         List<BoneBox> out = new ArrayList<BoneBox>();
         for (ModelBone b : bones) {
             if (b.cubes.isEmpty()) {
@@ -108,10 +126,10 @@ public final class MatouModel {
                     maxZ = c.maxZ();
                 }
             }
-            out.add(new BoneBox(b.name, new AABBd(minX / PX_PER_BLOCK,
-                    minY / PX_PER_BLOCK, minZ / PX_PER_BLOCK,
-                    maxX / PX_PER_BLOCK, maxY / PX_PER_BLOCK,
-                    maxZ / PX_PER_BLOCK)));
+            out.add(new BoneBox(b.name, new AABBd(minX / PX_PER_BLOCK + x,
+                    minY / PX_PER_BLOCK + y, minZ / PX_PER_BLOCK + z,
+                    maxX / PX_PER_BLOCK + x, maxY / PX_PER_BLOCK + y,
+                    maxZ / PX_PER_BLOCK + z)));
         }
         return Collections.unmodifiableList(out);
     }
