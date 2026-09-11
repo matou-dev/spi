@@ -237,6 +237,82 @@ public final class RenderPlanCheck {
             }
         }
 
+        // ViewProjection: driver column-major pairs into the row-major
+        // product Frustum.of consumes (clip = P * V * pos, GL convention).
+        float[] ident = {
+            1f, 0f, 0f, 0f,
+            0f, 1f, 0f, 0f,
+            0f, 0f, 1f, 0f,
+            0f, 0f, 0f, 1f
+        };
+        check(Arrays.equals(ViewProjection.vpRowMajor(ident, ident), ident),
+                "vp identity");
+        check(Arrays.equals(
+                Frustum.of(ViewProjection.vpRowMajor(ident, ident)).plane(0),
+                new float[] {1f, 0f, 0f, 1f}),
+                "vp identity frustum is the unit cube");
+        // Column-major translation (5,6,7) rides indices 12,13,14; the
+        // product against identity lands it row-major at 3,7,11.
+        float[] projTranslate = {
+            1f, 0f, 0f, 0f,
+            0f, 1f, 0f, 0f,
+            0f, 0f, 1f, 0f,
+            5f, 6f, 7f, 1f
+        };
+        check(Arrays.equals(
+                ViewProjection.vpRowMajor(ident, projTranslate),
+                new float[] {
+                    1f, 0f, 0f, 5f,
+                    0f, 1f, 0f, 6f,
+                    0f, 0f, 1f, 7f,
+                    0f, 0f, 0f, 1f}),
+                "vp column-major translation transposes row-major");
+        // Two-sided: scale-x-2 projection over translate(-5,0,0) view.
+        float[] viewTranslate = {
+            1f, 0f, 0f, 0f,
+            0f, 1f, 0f, 0f,
+            0f, 0f, 1f, 0f,
+            -5f, 0f, 0f, 1f
+        };
+        float[] projScale = {
+            2f, 0f, 0f, 0f,
+            0f, 1f, 0f, 0f,
+            0f, 0f, 1f, 0f,
+            0f, 0f, 0f, 1f
+        };
+        check(Arrays.equals(
+                ViewProjection.vpRowMajor(viewTranslate, projScale),
+                new float[] {
+                    2f, 0f, 0f, -10f,
+                    0f, 1f, 0f, 0f,
+                    0f, 0f, 1f, 0f,
+                    0f, 0f, 0f, 1f}),
+                "vp projection-times-view product");
+        float[] first = ViewProjection.vpRowMajor(ident, ident);
+        check(first != ident
+                && ViewProjection.vpRowMajor(ident, ident) != first,
+                "vp product is a fresh array, never aliased");
+        expectNPE(new Runnable() {
+            @Override public void run() {
+                ViewProjection.vpRowMajor(null, new float[16]);
+            }
+        }, "null view matrix");
+        expectNPE(new Runnable() {
+            @Override public void run() {
+                ViewProjection.vpRowMajor(new float[16], null);
+            }
+        }, "null projection matrix");
+        expectIAE(new Runnable() {
+            @Override public void run() {
+                ViewProjection.vpRowMajor(new float[15], new float[16]);
+            }
+        }, "short view matrix");
+        expectIAE(new Runnable() {
+            @Override public void run() {
+                ViewProjection.vpRowMajor(new float[16], new float[17]);
+            }
+        }, "long projection matrix");
+
         // Refusals: never a defaulted plane, record, or bucket.
         expectNPE(new Runnable() {
             @Override public void run() {

@@ -116,6 +116,16 @@ public final class VocabularyCheck {
                 "count")), "loot roles seal-ordered");
         check(MatouId.of("example1.loot", "count").equals(
                 LootStates.count(loot)), "loot resolvers agree");
+        StateVocabulary render = RenderStates.vocabulary("matoubridge.render");
+        check("render".equals(RenderStates.SCOPE), "render scope named");
+        check(render.names().equals(Arrays.asList("eye", "matrix",
+                "recs")), "render roles seal-ordered");
+        check(MatouId.of("matoubridge.render", "matrix").equals(
+                RenderStates.matrix(render)), "render resolvers agree");
+        check(MatouId.of("matoubridge.render", "eye").equals(
+                RenderStates.eye(render)), "render eye resolves");
+        check(MatouId.of("matoubridge.render", "recs").equals(
+                RenderStates.recs(render)), "render recs resolves");
 
         // Cross-domain reads refuse: a loot vocabulary carries no spawn
         // roles, so a spawn seal fed the wrong vocabulary fails here.
@@ -125,6 +135,11 @@ public final class VocabularyCheck {
                 SpawnStates.census(foreign);
             }
         }, "spawn role on loot vocabulary");
+        expectIAE(new Runnable() {
+            @Override public void run() {
+                RenderStates.eye(foreign);
+            }
+        }, "render role on loot vocabulary");
         expectNPE(new Runnable() {
             @Override public void run() {
                 SpawnStates.census(null);
@@ -135,6 +150,16 @@ public final class VocabularyCheck {
                 LootStates.count(null);
             }
         }, "null loot vocabulary");
+        expectNPE(new Runnable() {
+            @Override public void run() {
+                RenderStates.eye(null);
+            }
+        }, "null render vocabulary");
+        expectNPE(new Runnable() {
+            @Override public void run() {
+                RenderStates.vocabulary(null);
+            }
+        }, "null render namespace");
         expectNPE(new Runnable() {
             @Override public void run() {
                 SpawnStates.vocabulary(null);
