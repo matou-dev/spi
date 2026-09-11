@@ -21,3 +21,4 @@ java -cp java/build fr.iamacat.spi.SkeletonCheck
 java -cp java/build fr.iamacat.spi.VocabularyCheck
 java -cp java/build fr.iamacat.bridge.BridgeCheck
 java -cp java/build fr.iamacat.spi.render.RenderPlanCheck
+java -cp java/build fr.iamacat.spi.hit.HitCheck
