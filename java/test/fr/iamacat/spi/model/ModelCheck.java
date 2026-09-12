@@ -5,7 +5,10 @@ import fr.iamacat.spi.hit.HitTester;
 import fr.iamacat.spi.hit.RayHit;
 import fr.iamacat.spi.hit.Vec3d;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Gate ModelCheck: Bedrock parse goldens, mesh bake fidelity (positions,
@@ -78,6 +81,14 @@ public final class ModelCheck {
         testCubeRotation();
         testBoneInflate();
         testRefusals();
+        testMolang();
+        testAnimParse();
+        testAnimEval();
+        testPoseCompat();
+        testPosedYaw();
+        testMatrixCrossCheck();
+        testSkinned();
+        testAnimRefusals();
         System.out.println("ok model-check : all declarative-model tests passed");
     }
 
@@ -477,5 +488,352 @@ public final class ModelCheck {
                 + "{\"name\": \"a\", \"cubes\": [{\"origin\": [0, 0, 0],"
                 + " \"size\": [1, 1, 1], \"pivot\": [0, 0]}]}" + tail),
                 "E_MODEL_CUBE:pivot");
+    }
+
+    private static final String WALK =
+            "{\"format_version\": \"1.10.0\", \"animations\": {"
+            + "\"animation.beast.walk\": {\"loop\": true,"
+            + " \"bones\": {"
+            + "\"leg\": {\"rotation\": [\"math.cos(query.modified_distance_moved * 38.17) * 80.0\","
+            + " 0.0, 0.0]},"
+            + "\"body\": {\"position\": {\"0.0\": [0.0, 0.0, 0.0],"
+            + " \"0.5\": [0.0, 2.0, 0.0]}}"
+            + "}}}}";
+
+    private static Molang.Ctx ctx(double t, double life, double dist) {
+        return new Molang.Ctx(t, life, dist, 0.05,
+                Collections.singletonMap("boost", Double.valueOf(3.0)));
+    }
+
+    private static void checkNear(double got, double want, double eps, String msg) {
+        check(Math.abs(got - want) <= eps, msg + " (got " + got + ", want " + want + ")");
+    }
+
+    /**
+     * MOLANG goldens (animation tranche): precedence, the four queries,
+     * variable default-0, frozen math incl. the Math. alias, ternary,
+     * short-circuit logic, plus the refusal battery.
+     */
+    private static void testMolang() {
+        check(Molang.eval("1 + 2 * 3", Molang.zeroCtx()) == 7.0, "precedence");
+        check(Molang.eval("(2 + 3) * 4", Molang.zeroCtx()) == 20.0, "parens");
+        check(Molang.eval("10 % 3", Molang.zeroCtx()) == 1.0, "modulo");
+        check(Molang.eval("query.anim_time + query.life_time",
+                ctx(2.0, 100.0, 5.0)) == 102.0, "queries");
+        checkNear(Molang.eval("query.modified_distance_moved * 2 + query.delta_time",
+                ctx(0.0, 0.0, 5.0)), 10.05, 1e-12, "walk driver query");
+        check(Molang.eval("variable.boost * 2", ctx(0.0, 0.0, 0.0)) == 6.0, "variable");
+        check(Molang.eval("variable.missing + 1", ctx(0.0, 0.0, 0.0)) == 1.0, "variable default-0");
+        checkNear(Molang.eval("math.sin(1.5707963267948966)", Molang.zeroCtx()),
+                1.0, 1e-12, "math.sin radians");
+        check(Molang.eval("Math.cos(0)", Molang.zeroCtx()) == 1.0, "Math. alias");
+        check(Molang.eval("query.life_time > 50 ? 10 : 20", ctx(0.0, 100.0, 0.0)) == 10.0,
+                "ternary");
+        check(Molang.eval("1 > 2 || 3 < 4", Molang.zeroCtx()) == 1.0, "logic or");
+        check(Molang.eval("1 && 2", Molang.zeroCtx()) == 1.0, "logic and");
+        check(Molang.eval("0 || 0", Molang.zeroCtx()) == 0.0, "logic nor");
+        check(Molang.eval("!0", Molang.zeroCtx()) == 1.0, "not");
+        check(Molang.eval("math.clamp(5, 0, 3)", Molang.zeroCtx()) == 3.0, "clamp");
+        check(Molang.eval("math.lerp(0, 10, 0.25)", Molang.zeroCtx()) == 2.5, "lerp");
+        check(Molang.eval("math.max(1, 7)", Molang.zeroCtx()) == 7.0, "max");
+        checkNear(Molang.eval("math.pi", Molang.zeroCtx()), Math.PI, 0.0, "math.pi");
+        assertThrows(() -> Molang.eval("", Molang.zeroCtx()), "E_ANIM_MOLANG:empty");
+        assertThrows(() -> Molang.eval("1 +", Molang.zeroCtx()), "E_ANIM_MOLANG:syntax");
+        assertThrows(() -> Molang.eval("query.is_baby", Molang.zeroCtx()), "E_ANIM_MOLANG:query");
+        assertThrows(() -> Molang.eval("this", Molang.zeroCtx()), "E_ANIM_MOLANG:this");
+        assertThrows(() -> Molang.eval("temp.x", Molang.zeroCtx()), "E_ANIM_MOLANG:scope");
+        assertThrows(() -> Molang.eval("math.tan(1)", Molang.zeroCtx()), "E_ANIM_MOLANG:fn");
+        assertThrows(() -> Molang.eval("math.sin(1, 2)", Molang.zeroCtx()), "E_ANIM_MOLANG:syntax");
+        assertThrows(() -> Molang.eval("x = 1", Molang.zeroCtx()), "E_ANIM_MOLANG:assign");
+        assertThrows(() -> Molang.eval("foo(1)", Molang.zeroCtx()), "E_ANIM_MOLANG:fn");
+        assertThrows(() -> Molang.eval("query.life_time(", Molang.zeroCtx()),
+                "E_ANIM_MOLANG:syntax");
+    }
+
+    /** Animation document parse goldens: walk clip, loop modes, scale. */
+    private static void testAnimParse() {
+        Map<String, MatouAnimation> clips = MatouAnimationParser.parse(WALK);
+        check(clips.size() == 1, "one clip");
+        MatouAnimation walk = clips.get("animation.beast.walk");
+        check(walk != null, "clip by name");
+        check(walk.loop == MatouAnimation.Loop.LOOP, "loop true");
+        check(walk.length == 0.5, "length defaults to last key");
+        check(walk.bones.size() == 2, "two animated bones");
+        check(walk.bones.get("leg").rotation != null
+                && walk.bones.get("leg").position == null, "leg rotation only");
+        Map<String, MatouAnimation> hold = MatouAnimationParser.parse(
+                "{\"format_version\": \"1.10.0\", \"animations\": {"
+                + "\"animation.x.idle\": {\"loop\": \"hold_on_last_frame\","
+                + " \"animation_length\": 2.0,"
+                + " \"bones\": {\"b\": {\"scale\": [2.0]}}}}}");
+        MatouAnimation idle = hold.get("animation.x.idle");
+        check(idle.loop == MatouAnimation.Loop.HOLD, "hold parses");
+        check(idle.length == 2.0, "explicit length kept");
+    }
+
+    /** Single-clip eval goldens: continuity, lerp, wrap, clamp, update. */
+    private static void testAnimEval() {
+        MatouAnimation walk = MatouAnimationParser.parse(WALK).get("animation.beast.walk");
+        MatouAnimation.BonePose at0 = walk.evaluate(0.0, ctx(0.0, 0.0, 0.0)).bones.get("leg");
+        checkNear(at0.rotX, 80.0, 1e-9, "walk starts at +80");
+        double neg = Math.PI / 38.17;
+        MatouAnimation.BonePose atNeg = walk.evaluate(0.0, ctx(0.0, 0.0, neg)).bones.get("leg");
+        checkNear(atNeg.rotX, -80.0, 1e-9, "walk half-period at -80");
+        MatouAnimation.BonePose mid = walk.evaluate(0.25, ctx(0.25, 0.0, 0.0)).bones.get("body");
+        checkNear(mid.posY, 1.0, 1e-9, "keyframe midpoint lerps exact");
+        MatouAnimation.BonePose wrapped = walk.evaluate(0.6, ctx(0.6, 0.0, 0.0)).bones.get("body");
+        checkNear(wrapped.posY, 0.4, 1e-9, "loop wraps t mod length");
+        Map<String, MatouAnimation> once = MatouAnimationParser.parse(
+                "{\"format_version\": \"1.10.0\", \"animations\": {"
+                + "\"animation.x.once\": {\"loop\": false,"
+                + " \"bones\": {\"b\": {\"position\": {\"0.0\": [0.0, 0.0, 0.0],"
+                + " \"1.0\": [0.0, 4.0, 0.0]}}}}}}");
+        MatouAnimation.BonePose frozen =
+                once.get("animation.x.once").evaluate(99.0, ctx(99.0, 0.0, 0.0)).bones.get("b");
+        checkNear(frozen.posY, 4.0, 1e-9, "clamp freezes at the last key");
+        Map<String, MatouAnimation> upd = MatouAnimationParser.parse(
+                "{\"format_version\": \"1.10.0\", \"animations\": {"
+                + "\"animation.x.tick\": {\"anim_time_update\": \"query.life_time * 2\","
+                + " \"bones\": {\"b\": {\"rotation\": [\"query.anim_time\", 0.0, 0.0]}}}}}");
+        MatouAnimation.BonePose driven =
+                upd.get("animation.x.tick").evaluate(1.0, ctx(1.0, 3.0, 0.0)).bones.get("b");
+        checkNear(driven.rotX, 6.0, 1e-9, "anim_time_update drives the clip time");
+        Map<String, MatouAnimation> nan = MatouAnimationParser.parse(
+                "{\"format_version\": \"1.10.0\", \"animations\": {"
+                + "\"animation.x.bad\": {\"bones\": {\"b\": {\"rotation\": [\"0.0/0.0\","
+                + " 0.0, 0.0]}}}}}");
+        assertThrows(() -> nan.get("animation.x.bad").evaluate(0.0, ctx(0.0, 0.0, 0.0)),
+                "E_ANIM_MOLANG:nan");
+        Map<String, MatouAnimation> skew = MatouAnimationParser.parse(
+                "{\"format_version\": \"1.10.0\", \"animations\": {"
+                + "\"animation.x.skew\": {\"bones\": {\"b\": {\"scale\": [\"1\", \"2\", \"1\"]}}}}}");
+        assertThrows(() -> skew.get("animation.x.skew").evaluate(0.0, ctx(0.0, 0.0, 0.0)),
+                "E_ANIM_CHANNEL:scale");
+        assertThrows(() -> walk.evaluate(-1.0, ctx(0.0, 0.0, 0.0)), "E_ANIM_TIME");
+    }
+
+    /**
+     * Pose compat comparateur: the identity pose bakes the bind bytes
+     * (mesh float-for-float, boxes field-for-field) and yields identity
+     * delta matrices. Bridges re-pin on this strength.
+     */
+    private static void testPoseCompat() {
+        MatouModel m = MatouModelParser.parse(BEAST);
+        MatouAnimation.AnimPose id = MatouAnimation.AnimPose.identity();
+        check(Arrays.equals(m.bakeMesh(), m.bakePosedMesh(id)), "identity pose bakes identical mesh");
+        List<BoneBox> a = m.boneBoxes();
+        List<BoneBox> b = m.posedBoxes(id);
+        check(a.size() == b.size(), "identity pose keeps box count");
+        for (int i = 0; i < a.size(); i++) {
+            check(a.get(i).boneName.equals(b.get(i).boneName)
+                    && a.get(i).box.equals(b.get(i).box), "identity pose keeps boxes");
+        }
+        Map<String, float[]> deltas = m.poseDeltaMatrices(id);
+        check(deltas.size() == 2, "one delta per bone");
+        for (float[] d : deltas.values()) {
+            for (int i = 0; i < 16; i++) {
+                double want = (i == 0 || i == 5 || i == 10 || i == 15) ? 1.0 : 0.0;
+                check(Math.abs(d[i] - want) < 1e-9, "identity pose delta is identity");
+            }
+        }
+    }
+
+    private static MatouAnimation.AnimPose yawHead(double yawDeg) {
+        Map<String, MatouAnimation.BonePose> pm =
+                new LinkedHashMap<String, MatouAnimation.BonePose>();
+        pm.put("head", new MatouAnimation.BonePose(0.0, yawDeg, 0.0,
+                0.0, 0.0, 0.0, 1.0));
+        return new MatouAnimation.AnimPose(pm);
+    }
+
+    /**
+     * Posed yaw golden: a 45-degree head pose widens the head box to
+     * 4.5*sqrt(2) px exactly (same conservative cover as the rotated
+     * proof asset), leaves the body alone, and the head delta carries
+     * the yaw rotation.
+     */
+    private static void testPosedYaw() {
+        MatouModel m = MatouModelParser.parse(BEAST);
+        MatouAnimation.AnimPose pose = yawHead(45.0);
+        List<BoneBox> boxes = m.posedBoxes(pose);
+        check(boxes.size() == 2, "posed keeps both boxes");
+        double half = 4.5 * Math.sqrt(2.0) / 16.0;
+        check(Math.abs(boxes.get(1).box.minX - (-half)) < 1e-9, "posed head minX widened");
+        check(Math.abs(boxes.get(1).box.maxX - half) < 1e-9, "posed head maxX widened");
+        check(Math.abs(boxes.get(1).box.minZ - (-half)) < 1e-9, "posed head minZ widened");
+        check(Math.abs(boxes.get(1).box.maxZ - half) < 1e-9, "posed head maxZ widened");
+        check(Math.abs(boxes.get(1).box.minY - (15.5 / 16.0)) < 1e-9, "posed head minY kept");
+        check(Math.abs(boxes.get(1).box.maxY - (24.5 / 16.0)) < 1e-9, "posed head maxY kept");
+        List<BoneBox> bind = m.boneBoxes();
+        check(boxes.get(0).box.equals(bind.get(0).box), "unposed body box untouched");
+        windingOutward(m.bakePosedMesh(pose));
+        Map<String, float[]> deltas = m.poseDeltaMatrices(pose);
+        float[] body = deltas.get("body");
+        check(Math.abs(body[0] - 1.0f) < 1e-6 && Math.abs(body[5] - 1.0f) < 1e-6
+                && Math.abs(body[10] - 1.0f) < 1e-6, "unposed bone delta is identity");
+        float[] head = deltas.get("head");
+        double c = Math.cos(Math.toRadians(45.0));
+        double s = Math.sin(Math.toRadians(45.0));
+        check(Math.abs(head[0] - c) < 1e-6 && Math.abs(head[10] - c) < 1e-6
+                && Math.abs(head[2] - s) < 1e-6 && Math.abs(head[8] + s) < 1e-6,
+                "posed head delta carries the yaw");
+        check(Math.abs(head[3]) < 1e-6 && Math.abs(head[7]) < 1e-6
+                && Math.abs(head[11]) < 1e-6, "yaw about the pivot keeps no offset");
+    }
+
+    /**
+     * Delta cross-check: delta-transformed bind corners equal the posed
+     * oracle mesh within 1e-5 — this is what lets the GPU path trust
+     * the matrices without ever uploading a rebaked mesh.
+     */
+    private static void testMatrixCrossCheck() {
+        MatouModel m = MatouModelParser.parse(BEAST);
+        MatouAnimation.AnimPose pose = yawHead(30.0);
+        float[] bind = m.bakeMesh();
+        float[] skinned = m.bakeSkinnedMesh();
+        float[] oracle = m.bakePosedMesh(pose);
+        Map<String, float[]> deltas = m.poseDeltaMatrices(pose);
+        check(bind.length == oracle.length, "oracle keeps the stride-8 layout");
+        int verts = bind.length / 8;
+        for (int v = 0; v < verts; v++) {
+            int bone = (int) skinned[v * 9 + 8];
+            float[] d = deltas.get(m.bones.get(bone).name);
+            double x = bind[v * 8];
+            double y = bind[v * 8 + 1];
+            double z = bind[v * 8 + 2];
+            double wx = d[0] * x + d[1] * y + d[2] * z + d[3];
+            double wy = d[4] * x + d[5] * y + d[6] * z + d[7];
+            double wz = d[8] * x + d[9] * y + d[10] * z + d[11];
+            check(Math.abs(wx - oracle[v * 8]) < 1e-5
+                    && Math.abs(wy - oracle[v * 8 + 1]) < 1e-5
+                    && Math.abs(wz - oracle[v * 8 + 2]) < 1e-5,
+                    "delta-skinned vertex " + v + " matches the oracle");
+        }
+    }
+
+    /** Skinned layout golden: stride 9, bind positions, bone indices. */
+    private static void testSkinned() {
+        MatouModel m = MatouModelParser.parse(BEAST);
+        float[] bind = m.bakeMesh();
+        float[] skinned = m.bakeSkinnedMesh();
+        check(skinned.length == 2 * 36 * 9, "skinned keeps 72 vertices of stride 9");
+        check(skinned[0] == bind[0]
+                && skinned[1] == bind[1]
+                && skinned[2] == bind[2], "skinned first pos is the bind pos");
+        check(skinned[3] == bind[3]
+                && skinned[4] == bind[4], "skinned first uv is the bind uv");
+        check(skinned[8] == 0.0f, "body vertices ride bone 0");
+        int headAt = 36 * 9;
+        check(skinned[headAt + 8] == 1.0f, "head vertices ride bone 1");
+        windingOutward9(skinned);
+    }
+
+    private static void windingOutward9(float[] v) {
+        int tris = v.length / 9 / 3;
+        for (int t = 0; t < tris; t++) {
+            int b = t * 3 * 9;
+            float ax = v[b];
+            float ay = v[b + 1];
+            float az = v[b + 2];
+            float bx = v[b + 9];
+            float by = v[b + 10];
+            float bz = v[b + 11];
+            float cx = v[b + 18];
+            float cy = v[b + 19];
+            float cz = v[b + 20];
+            float ux = bx - ax;
+            float uy = by - ay;
+            float uz = bz - az;
+            float wx = cx - ax;
+            float wy = cy - ay;
+            float wz = cz - az;
+            float nx = uy * wz - uz * wy;
+            float ny = uz * wx - ux * wz;
+            float nz = ux * wy - uy * wx;
+            float len = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
+            check(len > 1e-9, "skinned triangle " + t + " non-degenerate");
+            float dx = v[b + 5];
+            float dy = v[b + 6];
+            float dz = v[b + 7];
+            float dot = (nx / len) * dx + (ny / len) * dy + (nz / len) * dz;
+            check(dot > 0.999f, "skinned triangle " + t + " winds outward");
+        }
+    }
+
+    /** Refusal battery over the animation document catalog. */
+    private static void testAnimRefusals() {
+        assertThrows(() -> MatouAnimationParser.parse("{}"), "E_ANIM_DOC:missing");
+        assertThrows(() -> MatouAnimationParser.parse("{\"format_version\": \"1.10.0\"}"),
+                "E_ANIM_CLIP:empty");
+        assertThrows(() -> MatouAnimationParser.parse("{\"format_version\": \"1.10.0\","
+                + " \"animations\": {}, \"extra\": 1}"), "E_ANIM_DOC:shape");
+        String head = "{\"format_version\": \"1.10.0\", \"animations\": {";
+        String tail = "}}";
+        assertThrows(() -> MatouAnimationParser.parse(head
+                + "\"walk\": {\"bones\": {\"b\": {\"rotation\": [0, 0, 0]}}}" + tail),
+                "E_ANIM_NAME:shape");
+        String clip = head + "\"animation.x.t\": {";
+        String clipTail = "}" + tail;
+        assertThrows(() -> MatouAnimationParser.parse(clip
+                + "\"blend_weight\": \"1.0\","
+                + " \"bones\": {\"b\": {\"rotation\": [0, 0, 0]}}" + clipTail), "E_ANIM_BLEND");
+        assertThrows(() -> MatouAnimationParser.parse(clip
+                + "\"override_previous_animation\": true,"
+                + " \"bones\": {\"b\": {\"rotation\": [0, 0, 0]}}" + clipTail), "E_ANIM_OVERRIDE");
+        assertThrows(() -> MatouAnimationParser.parse(clip
+                + "\"timeline\": {\"0.0\": \"x\"},"
+                + " \"bones\": {\"b\": {\"rotation\": [0, 0, 0]}}" + clipTail), "E_ANIM_FX");
+        assertThrows(() -> MatouAnimationParser.parse(clip
+                + "\"bogus\": 1,"
+                + " \"bones\": {\"b\": {\"rotation\": [0, 0, 0]}}" + clipTail), "E_ANIM_CLIP:shape");
+        assertThrows(() -> MatouAnimationParser.parse(clip + "\"bones\": {}" + clipTail),
+                "E_ANIM_CLIP:empty");
+        assertThrows(() -> MatouAnimationParser.parse(clip
+                + "\"bones\": {\"b\": {\"relative_to\": {\"rotation\": \"entity\"}}}" + clipTail),
+                "E_ANIM_RELATIVE");
+        assertThrows(() -> MatouAnimationParser.parse(clip
+                + "\"bones\": {\"b\": {}}" + clipTail), "E_ANIM_CHANNEL:empty");
+        assertThrows(() -> MatouAnimationParser.parse(clip
+                + "\"bones\": {\"b\": {\"spin\": [0, 0, 0]}}" + clipTail), "E_ANIM_CHANNEL:shape");
+        assertThrows(() -> MatouAnimationParser.parse(clip
+                + "\"bones\": {\"b\": {\"rotation\": [0, 0]}}" + clipTail), "E_ANIM_CHANNEL:shape");
+        assertThrows(() -> MatouAnimationParser.parse(clip
+                + "\"bones\": {\"b\": {\"rotation\": {\"0.0\": {\"pre\": [0, 0, 0]}}}}" + clipTail),
+                "E_ANIM_KEY:shape");
+        assertThrows(() -> MatouAnimationParser.parse(clip
+                + "\"bones\": {\"b\": {\"rotation\": {\"soon\": [0, 0, 0]}}}" + clipTail),
+                "E_ANIM_KEY:time");
+        assertThrows(() -> MatouAnimationParser.parse(clip
+                + "\"bones\": {\"b\": {\"rotation\": {\"-1.0\": [0, 0, 0]}}}" + clipTail),
+                "E_ANIM_KEY:time");
+        assertThrows(() -> MatouAnimationParser.parse(clip
+                + "\"bones\": {\"b\": {\"scale\": [1, 2, 1]}}" + clipTail), "E_ANIM_CHANNEL:scale");
+        assertThrows(() -> MatouAnimationParser.parse(clip
+                + "\"loop\": true,"
+                + " \"bones\": {\"b\": {\"rotation\": [0, 0, 0]}}" + clipTail),
+                "E_ANIM_LENGTH:empty");
+        assertThrows(() -> MatouAnimationParser.parse(clip
+                + "\"animation_length\": 0.25,"
+                + " \"bones\": {\"b\": {\"rotation\": {\"0.0\": [0, 0, 0],"
+                + " \"0.5\": [1, 0, 0]}}}}" + tail), "E_ANIM_LENGTH:short");
+        assertThrows(() -> MatouAnimationParser.parse(clip
+                + "\"animation_length\": 0,"
+                + " \"bones\": {\"b\": {\"rotation\": [0, 0, 0]}}" + clipTail),
+                "E_ANIM_LENGTH:missing");
+        assertThrows(() -> MatouAnimationParser.parse(clip
+                + "\"loop\": \"yes\","
+                + " \"bones\": {\"b\": {\"rotation\": [0, 0, 0]}}" + clipTail), "E_ANIM_CLIP:shape");
+        assertThrows(() -> MatouAnimationParser.parse(clip
+                + "\"anim_time_update\": 5,"
+                + " \"bones\": {\"b\": {\"rotation\": [0, 0, 0]}}" + clipTail), "E_ANIM_CLIP:shape");
+        MatouModel m = MatouModelParser.parse(BEAST);
+        assertThrows(() -> m.bakePosedMesh(null), "E_ANIM_POSE:null");
+        assertThrows(() -> m.posedBoxes(null), "E_ANIM_POSE:null");
+        Map<String, MatouAnimation.BonePose> pm =
+                new LinkedHashMap<String, MatouAnimation.BonePose>();
+        pm.put("ghost", new MatouAnimation.BonePose(0, 0, 0, 0, 0, 0, 1));
+        MatouAnimation.AnimPose ghost = new MatouAnimation.AnimPose(pm);
+        assertThrows(() -> m.bakePosedMesh(ghost), "E_ANIM_BONE:unknown");
+        assertThrows(() -> m.poseDeltaMatrices(ghost), "E_ANIM_BONE:unknown");
     }
 }

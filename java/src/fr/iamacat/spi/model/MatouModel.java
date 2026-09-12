@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -330,6 +331,65 @@ public final class MatouModel {
             double[] r = xformPoint(cn[i], c, chain);
             q[i] = new double[] {r[0] / PX_PER_BLOCK, r[1] / PX_PER_BLOCK, r[2] / PX_PER_BLOCK};
         }
+        double[][] n = new double[6][];
+        for (int fi = 0; fi < 6; fi++) {
+            n[fi] = xformDir(FACE_NORMALS[fi][0], FACE_NORMALS[fi][1], FACE_NORMALS[fi][2], c, chain);
+        }
+        return emitFaces(out, at, c, q, n, 8, 0.0f);
+    }
+
+    /**
+     * Posed twin of {@link #emitCube} for the gate oracle: same faces,
+     * same UVs, corners and normals through the posed chain.
+     */
+    private int emitCubePosed(float[] out, int at, ModelCube c, List<PosedLevel> chain) {
+        double[][] cn = inflatedCorners(c);
+        double[][] q = new double[8][];
+        for (int i = 0; i < 8; i++) {
+            double[] r = xformPointPosed(cn[i], c, chain);
+            q[i] = new double[] {r[0] / PX_PER_BLOCK, r[1] / PX_PER_BLOCK, r[2] / PX_PER_BLOCK};
+        }
+        double[][] n = new double[6][];
+        for (int fi = 0; fi < 6; fi++) {
+            n[fi] = xformDirPosed(FACE_NORMALS[fi][0], FACE_NORMALS[fi][1],
+                    FACE_NORMALS[fi][2], c, chain);
+        }
+        return emitFaces(out, at, c, q, n, 8, 0.0f);
+    }
+
+    /**
+     * Skinned emission for the GPU path: bind corners and normals plus
+     * the file-order bone index (stride 9). Positions are the bind bake
+     * — the shader applies the delta matrices, never a rebaked mesh.
+     */
+    private int emitCubeSkinned(float[] out, int at, ModelCube c,
+            List<double[][]> chain, float bone) {
+        double[][] cn = inflatedCorners(c);
+        double[][] q = new double[8][];
+        for (int i = 0; i < 8; i++) {
+            double[] r = xformPoint(cn[i], c, chain);
+            q[i] = new double[] {r[0] / PX_PER_BLOCK, r[1] / PX_PER_BLOCK, r[2] / PX_PER_BLOCK};
+        }
+        double[][] n = new double[6][];
+        for (int fi = 0; fi < 6; fi++) {
+            n[fi] = xformDir(FACE_NORMALS[fi][0], FACE_NORMALS[fi][1], FACE_NORMALS[fi][2], c, chain);
+        }
+        return emitFaces(out, at, c, q, n, 9, bone);
+    }
+    /** Base face normals in bake order (south, north, up, down, east, west). */
+    private static final double[][] FACE_NORMALS = {
+        {0, 0, 1}, {0, 0, -1}, {0, 1, 0}, {0, -1, 0}, {1, 0, 0}, {-1, 0, 0},
+    };
+
+    /**
+     * Shared face emitter (the single derivation point for winding and
+     * UVs — bind, posed and skinned paths all land here): positions and
+     * normals are precomputed by the caller, this method only lays out
+     * faces. Stride 8 ignores bone, stride 9 appends it after the
+     * normal.
+     */
+    private int emitFaces(float[] out, int at, ModelCube c, double[][] q,
+            double[][] normals, int stride, float bone) {
         // Faces: normal + 4 corner indices wound so (a,b,c)+(a,c,d) face
         // out. Corner order mirrors the live BOX_VERTICES box exactly:
         // 0:(x0,y0,z0) 1:(x1,y0,z0) 2:(x1,y1,z0) 3:(x0,y1,z0)
@@ -361,7 +421,7 @@ public final class MatouModel {
                     continue;
                 }
             }
-            double[] n = xformDir(f[0], f[1], f[2], c, chain);
+            double[] n = normals[fi];
             double[][] pat = "down".equals(ModelCube.FACES[fi]) ? downPat : cornerPat;
             double[] cornerU = {0.0, f[7], f[7], 0.0};
             double[] cornerV = {0.0, 0.0, f[8], f[8]};
@@ -382,8 +442,395 @@ public final class MatouModel {
                 out[at++] = (float) n[0];
                 out[at++] = (float) n[1];
                 out[at++] = (float) n[2];
+                if (stride == 9) {
+                    out[at++] = bone;
+                }
             }
         }
         return at;
+    }
+
+    /**
+     * Gate oracle for the animation tranche (hub
+     * decisions/MATOU_ANIMATION.md): the stride-8 mesh under a pose,
+     * same layout as {@link #bakeMesh()}. An identity pose bakes
+     * float-for-float identical (the compat comparateur pins it).
+     * Never the runtime path — the GPU consumes
+     * {@link #poseDeltaMatrices}, never a rebaked mesh.
+     */
+    public float[] bakePosedMesh(MatouAnimation.AnimPose pose) {
+        Map<String, MatouAnimation.BonePose> pmap = checkPose(pose);
+        Map<String, ModelBone> byName = boneIndex();
+        float[] out = new float[emittedVertexCount() * VERTEX_STRIDE];
+        int at = 0;
+        for (ModelBone b : bones) {
+            List<PosedLevel> chain = chainForPosed(b, byName, pmap);
+            for (ModelCube c : b.cubes) {
+                at = emitCubePosed(out, at, c, chain);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Skinned mesh for the GPU path: bind positions and normals plus
+     * the file-order bone index per vertex (stride 9: pos3, uv2,
+     * normal3, bone1). The shader applies
+     * {@link #poseDeltaMatrices} to these bind positions.
+     */
+    public float[] bakeSkinnedMesh() {
+        Map<String, ModelBone> byName = boneIndex();
+        float[] out = new float[emittedVertexCount() * 9];
+        int at = 0;
+        int bi = 0;
+        for (ModelBone b : bones) {
+            List<double[][]> chain = chainFor(b, byName);
+            for (ModelCube c : b.cubes) {
+                at = emitCubeSkinned(out, at, c, chain, (float) bi);
+            }
+            bi++;
+        }
+        return out;
+    }
+
+    /**
+     * Posed hitboxes: conservative axis-aligned union over the posed
+     * corners per non-empty bone (entity-local). The combat path rides
+     * these, never the bind boxes, once a clip plays.
+     */
+    public List<BoneBox> posedBoxes(MatouAnimation.AnimPose pose) {
+        return shiftedBoxesPosed(0.0, 0.0, 0.0, pose);
+    }
+
+    /**
+     * World-space placement of {@link #posedBoxes} at the entity
+     * origin (feet). Reuses E_MODEL_PLACE:nan (cited, never
+     * redefined — anti-doublon).
+     */
+    public List<BoneBox> placedPosedBoxes(double x, double y, double z,
+            MatouAnimation.AnimPose pose) {
+        if (Double.isNaN(x) || Double.isNaN(y) || Double.isNaN(z)) {
+            throw new IllegalArgumentException("E_MODEL_PLACE:nan (want a finite entity origin)");
+        }
+        return shiftedBoxesPosed(x, y, z, pose);
+    }
+
+    /**
+     * GPU delivery contract: per-bone pose delta matrices, model bone
+     * order, 4x4 row-major float[16] each. The shader skins bind
+     * positions directly ({@code worldPos = D_bone * bindPos}) where
+     * {@code D = W_pose * W_bind^-1}. An identity pose yields identity
+     * matrices (the delta comparateur pins it).
+     */
+    public Map<String, float[]> poseDeltaMatrices(MatouAnimation.AnimPose pose) {
+        Map<String, MatouAnimation.BonePose> pmap = checkPose(pose);
+        Map<String, ModelBone> byName = boneIndex();
+        Map<String, float[]> out = new LinkedHashMap<String, float[]>();
+        for (ModelBone b : bones) {
+            List<PosedLevel> chain = chainForPosed(b, byName, pmap);
+            double[] wPose = worldMatrix(chain, false);
+            double[] wBind = worldMatrix(chain, true);
+            out.put(b.name, toFloat(mul4(wPose, invertRts(wBind))));
+        }
+        return Collections.unmodifiableMap(out);
+    }
+
+    private List<BoneBox> shiftedBoxesPosed(double x, double y, double z,
+            MatouAnimation.AnimPose pose) {
+        Map<String, MatouAnimation.BonePose> pmap = checkPose(pose);
+        Map<String, ModelBone> byName = boneIndex();
+        List<BoneBox> out = new ArrayList<BoneBox>();
+        for (ModelBone b : bones) {
+            if (b.cubes.isEmpty()) {
+                continue;
+            }
+            List<PosedLevel> chain = chainForPosed(b, byName, pmap);
+            double minX = Double.POSITIVE_INFINITY;
+            double minY = Double.POSITIVE_INFINITY;
+            double minZ = Double.POSITIVE_INFINITY;
+            double maxX = Double.NEGATIVE_INFINITY;
+            double maxY = Double.NEGATIVE_INFINITY;
+            double maxZ = Double.NEGATIVE_INFINITY;
+            for (ModelCube c : b.cubes) {
+                for (double[] corner : inflatedCorners(c)) {
+                    double[] q = xformPointPosed(corner, c, chain);
+                    if (q[0] < minX) {
+                        minX = q[0];
+                    }
+                    if (q[1] < minY) {
+                        minY = q[1];
+                    }
+                    if (q[2] < minZ) {
+                        minZ = q[2];
+                    }
+                    if (q[0] > maxX) {
+                        maxX = q[0];
+                    }
+                    if (q[1] > maxY) {
+                        maxY = q[1];
+                    }
+                    if (q[2] > maxZ) {
+                        maxZ = q[2];
+                    }
+                }
+            }
+            out.add(new BoneBox(b.name, new AABBd(minX / PX_PER_BLOCK + x,
+                    minY / PX_PER_BLOCK + y, minZ / PX_PER_BLOCK + z,
+                    maxX / PX_PER_BLOCK + x, maxY / PX_PER_BLOCK + y,
+                    maxZ / PX_PER_BLOCK + z)));
+        }
+        return Collections.unmodifiableList(out);
+    }
+
+    /** Validates a pose against the model (sparse: absent means bind). */
+    private Map<String, MatouAnimation.BonePose> checkPose(MatouAnimation.AnimPose pose) {
+        if (pose == null) {
+            throw new NullPointerException("E_ANIM_POSE:null (want a pose, possibly identity)");
+        }
+        Map<String, ModelBone> byName = boneIndex();
+        for (String b : pose.bones.keySet()) {
+            if (!byName.containsKey(b)) {
+                throw new IllegalArgumentException("E_ANIM_BONE:unknown <" + b
+                        + "> (want a bone of this model — never skipped)");
+            }
+        }
+        return pose.bones;
+    }
+
+    /** One posed chain level: pivot, bind+pose Euler, offset, scale. */
+    private static final class PosedLevel {
+        double px;
+        double py;
+        double pz;
+        double rx;
+        double ry;
+        double rz;
+        double ox;
+        double oy;
+        double oz;
+        double s;
+        double brx;
+        double bry;
+        double brz;
+    }
+
+    private static List<PosedLevel> chainForPosed(ModelBone b,
+            Map<String, ModelBone> byName, Map<String, MatouAnimation.BonePose> pmap) {
+        List<PosedLevel> chain = new ArrayList<PosedLevel>();
+        Set<String> seen = new HashSet<String>();
+        ModelBone cur = b;
+        while (cur != null) {
+            if (!seen.add(cur.name)) {
+                throw new IllegalArgumentException("E_MODEL_BONE:parent <cycle at "
+                        + cur.name + "> (want an acyclic bone tree)");
+            }
+            MatouAnimation.BonePose p = pmap.get(cur.name);
+            PosedLevel l = new PosedLevel();
+            l.px = cur.pivotX;
+            l.py = cur.pivotY;
+            l.pz = cur.pivotZ;
+            l.brx = cur.rotX;
+            l.bry = cur.rotY;
+            l.brz = cur.rotZ;
+            l.rx = cur.rotX + (p == null ? 0.0 : p.rotX);
+            l.ry = cur.rotY + (p == null ? 0.0 : p.rotY);
+            l.rz = cur.rotZ + (p == null ? 0.0 : p.rotZ);
+            l.ox = p == null ? 0.0 : p.posX;
+            l.oy = p == null ? 0.0 : p.posY;
+            l.oz = p == null ? 0.0 : p.posZ;
+            l.s = p == null ? 1.0 : p.scale;
+            chain.add(l);
+            cur = (cur.parent == null) ? null : byName.get(cur.parent);
+        }
+        return chain;
+    }
+
+    /**
+     * Posed twin of {@link #xformPoint}: cube bind rotation first, then
+     * per level {@code p' = P + O + R(bind + pose) * S(s) * (p - P)}.
+     * A fully identity level skips bit-for-bit.
+     */
+    private static double[] xformPointPosed(double[] p, ModelCube c, List<PosedLevel> chain) {
+        double x = p[0];
+        double y = p[1];
+        double z = p[2];
+        if (c.rotX != 0.0 || c.rotY != 0.0 || c.rotZ != 0.0) {
+            double px = c.hasPivot ? c.pivotX : c.originX + c.sizeX / 2.0;
+            double py = c.hasPivot ? c.pivotY : c.originY + c.sizeY / 2.0;
+            double pz = c.hasPivot ? c.pivotZ : c.originZ + c.sizeZ / 2.0;
+            double[] r = rotAbout(x, y, z, px, py, pz, c.rotX, c.rotY, c.rotZ);
+            x = r[0];
+            y = r[1];
+            z = r[2];
+        }
+        for (PosedLevel l : chain) {
+            if (l.rx == 0.0 && l.ry == 0.0 && l.rz == 0.0
+                    && l.ox == 0.0 && l.oy == 0.0 && l.oz == 0.0 && l.s == 1.0) {
+                continue;
+            }
+            double[] r = rotVec((x - l.px) * l.s, (y - l.py) * l.s, (z - l.pz) * l.s,
+                    l.rx, l.ry, l.rz);
+            x = r[0] + l.px + l.ox;
+            y = r[1] + l.py + l.oy;
+            z = r[2] + l.pz + l.oz;
+        }
+        return new double[] {x, y, z};
+    }
+
+    /** Posed twin of {@link #xformDir}: pose Euler only, renormalized. */
+    private static double[] xformDirPosed(double nx, double ny, double nz,
+            ModelCube c, List<PosedLevel> chain) {
+        double x = nx;
+        double y = ny;
+        double z = nz;
+        boolean moved = false;
+        if (c.rotX != 0.0 || c.rotY != 0.0 || c.rotZ != 0.0) {
+            double[] r = rotVec(x, y, z, c.rotX, c.rotY, c.rotZ);
+            x = r[0];
+            y = r[1];
+            z = r[2];
+            moved = true;
+        }
+        for (PosedLevel l : chain) {
+            if (l.rx == 0.0 && l.ry == 0.0 && l.rz == 0.0) {
+                continue;
+            }
+            double[] r = rotVec(x, y, z, l.rx, l.ry, l.rz);
+            x = r[0];
+            y = r[1];
+            z = r[2];
+            moved = true;
+        }
+        if (!moved) {
+            return new double[] {nx, ny, nz};
+        }
+        double len = Math.sqrt(x * x + y * y + z * z);
+        return new double[] {x / len, y / len, z / len};
+    }
+
+    /**
+     * World matrix of one chain (row-major 4x4): root leftmost,
+     * {@code W = M_root * ... * M_leaf} with
+     * {@code M = T(P + O) * R * S(s) * T(-P)}. Bind selects the bind
+     * Euler and drops offset and scale.
+     */
+    private static double[] worldMatrix(List<PosedLevel> chain, boolean bind) {
+        double[] w = identity4();
+        for (int i = chain.size() - 1; i >= 0; i--) {
+            PosedLevel l = chain.get(i);
+            double rx = bind ? l.brx : l.rx;
+            double ry = bind ? l.bry : l.ry;
+            double rz = bind ? l.brz : l.rz;
+            double ox = bind ? 0.0 : l.ox;
+            double oy = bind ? 0.0 : l.oy;
+            double oz = bind ? 0.0 : l.oz;
+            double s = bind ? 1.0 : l.s;
+            w = mul4(w, localMatrix(l.px, l.py, l.pz, rx, ry, rz, ox, oy, oz, s));
+        }
+        return w;
+    }
+
+    private static double[] identity4() {
+        double[] m = new double[16];
+        m[0] = 1.0;
+        m[5] = 1.0;
+        m[10] = 1.0;
+        m[15] = 1.0;
+        return m;
+    }
+
+    private static double[] mul4(double[] a, double[] b) {
+        double[] out = new double[16];
+        for (int r = 0; r < 4; r++) {
+            for (int c = 0; c < 4; c++) {
+                out[r * 4 + c] = a[r * 4] * b[c] + a[r * 4 + 1] * b[4 + c]
+                        + a[r * 4 + 2] * b[8 + c] + a[r * 4 + 3] * b[12 + c];
+            }
+        }
+        return out;
+    }
+
+    /**
+     * {@code T(P + O) * R(rx,ry,rz) * S(s) * T(-P)} row-major. R matches
+     * {@link #rotVec} exactly (Rz * Ry * Rx, right-handed).
+     */
+    private static double[] localMatrix(double px, double py, double pz,
+            double rx, double ry, double rz, double ox, double oy, double oz, double s) {
+        double ax = Math.toRadians(rx);
+        double cx = Math.cos(ax);
+        double sx = Math.sin(ax);
+        double ay = Math.toRadians(ry);
+        double cy = Math.cos(ay);
+        double sy = Math.sin(ay);
+        double az = Math.toRadians(rz);
+        double cz = Math.cos(az);
+        double sz = Math.sin(az);
+        // Rx, Ry, Rz rows then R = Rz * Ry * Rx.
+        double[] rxx = {1.0, 0.0, 0.0, 0.0, cx, -sx, 0.0, sx, cx};
+        double[] ryy = {cy, 0.0, sy, 0.0, 1.0, 0.0, -sy, 0.0, cy};
+        double[] rzz = {cz, -sz, 0.0, sz, cz, 0.0, 0.0, 0.0, 1.0};
+        double[] r = mul3(rzz, mul3(ryy, rxx));
+        double tx = px + ox;
+        double ty = py + oy;
+        double tz = pz + oz;
+        double[] m = new double[16];
+        m[0] = r[0] * s;
+        m[1] = r[1] * s;
+        m[2] = r[2] * s;
+        m[3] = tx - s * (r[0] * px + r[1] * py + r[2] * pz);
+        m[4] = r[3] * s;
+        m[5] = r[4] * s;
+        m[6] = r[5] * s;
+        m[7] = ty - s * (r[3] * px + r[4] * py + r[5] * pz);
+        m[8] = r[6] * s;
+        m[9] = r[7] * s;
+        m[10] = r[8] * s;
+        m[11] = tz - s * (r[6] * px + r[7] * py + r[8] * pz);
+        m[15] = 1.0;
+        return m;
+    }
+
+    private static double[] mul3(double[] a, double[] b) {
+        double[] out = new double[9];
+        for (int r = 0; r < 3; r++) {
+            for (int c = 0; c < 3; c++) {
+                out[r * 3 + c] = a[r * 3] * b[c] + a[r * 3 + 1] * b[3 + c]
+                        + a[r * 3 + 2] * b[6 + c];
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Inverse of a rigid-plus-uniform-scale matrix {@code [sR | t]}
+     * (the only shape {@link #worldMatrix} produces — eval refuses
+     * zero/negative scales, so {@code s > 0} always).
+     */
+    static double[] invertRts(double[] m) {
+        double sx = Math.sqrt(m[0] * m[0] + m[4] * m[4] + m[8] * m[8]);
+        double[] out = new double[16];
+        // (1/s) R^T rows.
+        out[0] = m[0] / (sx * sx);
+        out[1] = m[4] / (sx * sx);
+        out[2] = m[8] / (sx * sx);
+        out[4] = m[1] / (sx * sx);
+        out[5] = m[5] / (sx * sx);
+        out[6] = m[9] / (sx * sx);
+        out[8] = m[2] / (sx * sx);
+        out[9] = m[6] / (sx * sx);
+        out[10] = m[10] / (sx * sx);
+        out[3] = -(out[0] * m[3] + out[1] * m[7] + out[2] * m[11]);
+        out[7] = -(out[4] * m[3] + out[5] * m[7] + out[6] * m[11]);
+        out[11] = -(out[8] * m[3] + out[9] * m[7] + out[10] * m[11]);
+        out[15] = 1.0;
+        return out;
+    }
+
+    private static float[] toFloat(double[] m) {
+        float[] out = new float[m.length];
+        for (int i = 0; i < m.length; i++) {
+            out[i] = (float) m[i];
+        }
+        return out;
     }
 }
