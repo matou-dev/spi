@@ -2,6 +2,7 @@ package fr.iamacat.spi.model;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -54,7 +55,7 @@ public final class MatouModelParser {
                 throw new IllegalArgumentException("E_MODEL_BONE:shape (want a bones array)");
             }
             for (Object e : (List<?>) bonesObj) {
-                bones.add(parseBone(e));
+                bones.add(parseBone(e, texW, texH));
             }
         }
         Set<String> names = new HashSet<String>();
@@ -73,7 +74,7 @@ public final class MatouModelParser {
         return new MatouModel(((String) identifier).trim(), texW, texH, bones);
     }
 
-    private static ModelBone parseBone(Object e) {
+    private static ModelBone parseBone(Object e, int texW, int texH) {
         Map<String, Object> m = asObject(e, "E_MODEL_BONE:shape (want an object per bone)");
         Object name = m.get("name");
         if (!(name instanceof String) || ((String) name).trim().isEmpty()) {
@@ -100,14 +101,14 @@ public final class MatouModelParser {
                 throw new IllegalArgumentException("E_MODEL_CUBE:shape (want a cubes array)");
             }
             for (Object ce : (List<?>) cubesObj) {
-                cubes.add(parseCube(ce));
+                cubes.add(parseCube(ce, texW, texH));
             }
         }
         return new ModelBone(((String) name).trim(), parentName,
                 pivot[0], pivot[1], pivot[2], cubes);
     }
 
-    private static ModelCube parseCube(Object e) {
+    private static ModelCube parseCube(Object e, int texW, int texH) {
         Map<String, Object> m = asObject(e, "E_MODEL_CUBE:shape (want an object per cube)");
         if (m.get("origin") == null) {
             throw new IllegalArgumentException("E_MODEL_CUBE:origin (want origin [x, y, z])");
@@ -119,6 +120,7 @@ public final class MatouModelParser {
         double[] size = vec3(m.get("size"), "E_MODEL_CUBE:size");
         double uvU = 0.0;
         double uvV = 0.0;
+        Map<String, double[]> faceUv = null;
         if (m.get("uv") != null) {
             Object uv = m.get("uv");
             if (uv instanceof List) {
@@ -128,6 +130,10 @@ public final class MatouModelParser {
                 }
                 uvU = num(l.get(0), "E_MODEL_CUBE:uv");
                 uvV = num(l.get(1), "E_MODEL_CUBE:uv");
+            } else if (uv instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> faces = (Map<String, Object>) uv;
+                faceUv = parseFaceUv(faces, size, texW, texH);
             } else if (!(uv instanceof Number)) {
                 throw new IllegalArgumentException("E_MODEL_CUBE:uv (want [u, v] with u,v >= 0)");
             }
@@ -137,7 +143,84 @@ public final class MatouModelParser {
             inflate = num(m.get("inflate"), "E_MODEL_CUBE:shape");
         }
         return new ModelCube(origin[0], origin[1], origin[2],
-                size[0], size[1], size[2], uvU, uvV, inflate);
+                size[0], size[1], size[2], uvU, uvV, inflate, faceUv);
+    }
+
+    /**
+     * Parses the alternate per-face uv object (hub
+     * decisions/MATOU_MODEL.md, V2 tranche): face name to {uv, uv_size?,
+     * uv_rotation?, material_instance?}. uv_size defaults to the face box
+     * dimensions, a non-zero uv_rotation refuses (no silent unrotated
+     * bake), material_instance is accepted and ignored (no bake effect),
+     * any other unknown key refuses. The rect must fit the texture grid
+     * (the sampler clamps — an overhang would smear silently).
+     */
+    private static Map<String, double[]> parseFaceUv(
+            Map<String, Object> faces, double[] size, int texW, int texH) {
+        Map<String, double[]> out = new LinkedHashMap<String, double[]>();
+        for (Map.Entry<String, Object> e : faces.entrySet()) {
+            String name = e.getKey();
+            if (!ModelCube.isFace(name)) {
+                throw new IllegalArgumentException("E_MODEL_FACE:shape <"
+                        + name + "> (want one of north/south/east/west/up/down)");
+            }
+            Map<String, Object> f = asObject(e.getValue(),
+                    "E_MODEL_FACE:shape <" + name + "> (want {uv, uv_size?})");
+            for (String k : f.keySet()) {
+                if (!k.equals("uv") && !k.equals("uv_size")
+                        && !k.equals("uv_rotation")
+                        && !k.equals("material_instance")) {
+                    throw new IllegalArgumentException("E_MODEL_FACE:shape <"
+                            + name + "." + k + "> (want uv/uv_size/uv_rotation/material_instance)");
+                }
+            }
+            Object uv = f.get("uv");
+            if (!(uv instanceof List) || ((List<?>) uv).size() != 2) {
+                throw new IllegalArgumentException("E_MODEL_FACE:shape <"
+                        + name + "> (want uv [u, v])");
+            }
+            double u = num(((List<?>) uv).get(0), "E_MODEL_FACE:shape <" + name + ">");
+            double v = num(((List<?>) uv).get(1), "E_MODEL_FACE:shape <" + name + ">");
+            double w;
+            double h;
+            if (f.get("uv_size") != null) {
+                Object s = f.get("uv_size");
+                if (!(s instanceof List) || ((List<?>) s).size() != 2) {
+                    throw new IllegalArgumentException("E_MODEL_FACE:size <"
+                            + name + "> (want uv_size [w, h] with w,h > 0)");
+                }
+                w = num(((List<?>) s).get(0), "E_MODEL_FACE:size <" + name + ">");
+                h = num(((List<?>) s).get(1), "E_MODEL_FACE:size <" + name + ">");
+                if (!(w > 0.0) || !(h > 0.0)) {
+                    throw new IllegalArgumentException("E_MODEL_FACE:size <"
+                            + name + "> (want uv_size [w, h] with w,h > 0)");
+                }
+            } else if (name.equals("up") || name.equals("down")) {
+                w = size[0];
+                h = size[2];
+            } else if (name.equals("east") || name.equals("west")) {
+                w = size[2];
+                h = size[1];
+            } else {
+                w = size[0];
+                h = size[1];
+            }
+            if (f.get("uv_rotation") != null) {
+                Object r = f.get("uv_rotation");
+                if (!(r instanceof Number)
+                        || ((Number) r).doubleValue() != 0.0) {
+                    throw new IllegalArgumentException("E_MODEL_FACE:rotation <"
+                            + name + "> (want 0 or absent — a rotated rect bakes unrotated nowhere)");
+                }
+            }
+            if (u < 0.0 || v < 0.0 || u + w > texW || v + h > texH) {
+                throw new IllegalArgumentException("E_MODEL_FACE:uv <"
+                        + name + " " + u + "," + v + " " + w + "x" + h
+                        + "> (want the rect inside the " + texW + "x" + texH + " grid)");
+            }
+            out.put(name, new double[] {u, v, w, h});
+        }
+        return out;
     }
 
     private static double[] vec3(Object o, String code) {

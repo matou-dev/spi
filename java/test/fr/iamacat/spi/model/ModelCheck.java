@@ -28,6 +28,20 @@ public final class ModelCheck {
             + " \"uv\": [32, 0], \"inflate\": 0.5}]}"
             + "]}]}";
 
+    private static final String PFACE =
+            "{\"format_version\": \"1.12.0\", \"minecraft:geometry\": [{"
+            + "\"description\": {\"identifier\": \"geometry.faced\","
+            + " \"texture_width\": 64, \"texture_height\": 64},"
+            + "\"bones\": [{\"name\": \"body\","
+            + " \"cubes\": [{\"origin\": [0, 0, 0], \"size\": [16, 16, 16],"
+            + " \"uv\": {"
+            + "\"south\": {\"uv\": [0, 0], \"uv_size\": [16, 16]},"
+            + "\"north\": {\"uv\": [8, 8]},"
+            + "\"down\": {\"uv\": [0, 32]},"
+            + "\"east\": {\"uv\": [32, 0], \"material_instance\": \"*\"},"
+            + "\"west\": {\"uv\": [32, 16], \"uv_rotation\": 0}"
+            + "}}]}]}]}";
+
     private static void check(boolean cond, String msg) {
         if (!cond) {
             System.err.println("FAIL model-check : " + msg);
@@ -52,6 +66,7 @@ public final class ModelCheck {
     public static void main(String[] args) {
         testParse();
         testBakeMesh();
+        testPerFaceUv();
         testWinding();
         testBoneBoxes();
         testPlacedBoxes();
@@ -91,9 +106,56 @@ public final class ModelCheck {
         check(MatouModel.VERTEX_STRIDE == 8, "stride matches renderer layout");
     }
 
-    private static void testWinding() {
-        MatouModel m = MatouModelParser.parse(BEAST);
+    /**
+     * Per-face unwrap goldens (V2 tranche): five faces bake their own
+     * rects with the Bedrock upper-left convention, the omitted up face
+     * bakes nothing, positions and winding stay box-identical. Cube is
+     * 16^3 at the origin on a 64 grid, so px rects read straight off.
+     */
+    private static void testPerFaceUv() {
+        MatouModel m = MatouModelParser.parse(PFACE);
+        check(m.bones.get(0).cubes.get(0).faceUv.size() == 5, "five faces parsed");
         float[] v = m.bakeMesh();
+        check(v.length == 5 * 6 * 8, "omitted up face bakes nothing (30 verts)");
+        // South first vertex = corner a (0,0,1 blocks), rect [0,0,16,16]
+        // with the shared pattern a -> (u0, v0+h).
+        check(Math.abs(v[0]) < 1e-6 && Math.abs(v[1]) < 1e-6
+                && Math.abs(v[2] - 1.0f) < 1e-6, "south first pos");
+        check(Math.abs(v[3]) < 1e-6
+                && Math.abs(v[4] - 0.25f) < 1e-6, "south first uv (0, 16/64)");
+        // North first vertex = corner a (1,0,0 blocks), rect [8,8,16,16]
+        // defaulted to the face box dims, a -> (8, 24)/64.
+        int nAt = 6 * 8;
+        check(Math.abs(v[nAt] - 1.0f) < 1e-6
+                && Math.abs(v[nAt + 1]) < 1e-6
+                && Math.abs(v[nAt + 2]) < 1e-6, "north first pos");
+        check(Math.abs(v[nAt + 3] - 0.125f) < 1e-6
+                && Math.abs(v[nAt + 4] - 0.375f) < 1e-6, "north first uv (8/64, 24/64)");
+        // Down third present face, corner a (0,0,0 blocks), rect [0,32]
+        // defaulted to (16,16), down pattern a -> (u0+w, v0).
+        int dAt = 12 * 8;
+        check(Math.abs(v[dAt + 3] - 0.25f) < 1e-6
+                && Math.abs(v[dAt + 4] - 0.5f) < 1e-6, "down first uv (16/64, 32/64)");
+        // East fourth present face, corner a (1,0,1 blocks), rect [32,0]
+        // defaulted to (16,16), shared pattern a -> (u0, v0+h).
+        int eAt = 18 * 8;
+        check(Math.abs(v[eAt] - 1.0f) < 1e-6
+                && Math.abs(v[eAt + 2] - 1.0f) < 1e-6, "east first pos");
+        check(Math.abs(v[eAt + 3] - 0.5f) < 1e-6
+                && Math.abs(v[eAt + 4] - 0.25f) < 1e-6, "east first uv (32/64, 16/64)");
+        // West last face, corner d (0,1,0 blocks), rect [32,16],
+        // shared pattern d -> (u0, v0) = the rect top-left.
+        int wAt = 24 * 8 + 5 * 8;
+        check(Math.abs(v[wAt + 3] - 0.5f) < 1e-6
+                && Math.abs(v[wAt + 4] - 0.25f) < 1e-6, "west d uv is the rect origin");
+    }
+
+    private static void testWinding() {
+        windingOutward(MatouModelParser.parse(BEAST).bakeMesh());
+        windingOutward(MatouModelParser.parse(PFACE).bakeMesh());
+    }
+
+    private static void windingOutward(float[] v) {
         int tris = v.length / 8 / 3;
         for (int t = 0; t < tris; t++) {
             int b = t * 3 * 8;
@@ -225,5 +287,30 @@ public final class ModelCheck {
                 + " \"minecraft:geometry\": [{\"description\": {\"identifier\": \"g.x\","
                 + " \"texture_width\": 64, \"texture_height\": 64}, \"bones\": ["
                 + "{\"name\": \"a\", \"cubes\": \"nope\"}]}]}"), "E_MODEL_CUBE:shape");
+        String faceHead = "{\"format_version\": \"1.12.0\","
+                + " \"minecraft:geometry\": [{\"description\": {\"identifier\": \"g.x\","
+                + " \"texture_width\": 64, \"texture_height\": 64}, \"bones\": ["
+                + "{\"name\": \"a\", \"cubes\": [{\"origin\": [0, 0, 0],"
+                + " \"size\": [16, 16, 16], \"uv\": {";
+        String faceTail = "}}]}]}]}";
+        assertThrows(() -> MatouModelParser.parse(faceHead
+                + "\"top\": {\"uv\": [0, 0]}" + faceTail), "E_MODEL_FACE:shape");
+        assertThrows(() -> MatouModelParser.parse(faceHead
+                + "\"north\": [0, 0]" + faceTail), "E_MODEL_FACE:shape");
+        assertThrows(() -> MatouModelParser.parse(faceHead
+                + "\"north\": {}" + faceTail), "E_MODEL_FACE:shape");
+        assertThrows(() -> MatouModelParser.parse(faceHead
+                + "\"north\": {\"uv\": [0, 0], \"bogus\": 1}" + faceTail),
+                "E_MODEL_FACE:shape");
+        assertThrows(() -> MatouModelParser.parse(faceHead
+                + "\"north\": {\"uv\": [0, 0], \"uv_size\": [0, 16]}" + faceTail),
+                "E_MODEL_FACE:size");
+        assertThrows(() -> MatouModelParser.parse(faceHead
+                + "\"north\": {\"uv\": [0, 0], \"uv_rotation\": 90}" + faceTail),
+                "E_MODEL_FACE:rotation");
+        assertThrows(() -> MatouModelParser.parse(faceHead
+                + "\"north\": {\"uv\": [-1, 0]}" + faceTail), "E_MODEL_FACE:uv");
+        assertThrows(() -> MatouModelParser.parse(faceHead
+                + "\"north\": {\"uv\": [56, 56]}" + faceTail), "E_MODEL_FACE:uv");
     }
 }

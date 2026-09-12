@@ -14,9 +14,12 @@ import java.util.List;
  * <p>Units: Bedrock pixels in, block units out (PX_PER_BLOCK = 16).
  * Faces bake in bind pose, axis-aligned, CCW with outward normals —
  * same winding as the live-proven BOX_VERTICES it replaces
- * (bridge-1122 InstancedMeshRenderer). UVs are box-anchored planar
- * projections of the cube rect (per-face unwrap lands in V2 with texture
- * sampling); the V1 shader tints and ignores them.
+ * (bridge-1122 InstancedMeshRenderer). A box-anchor cube bakes the V1
+ * planar projection of the cube rect (kept byte-identical); a per-face
+ * cube bakes each present face from its own rect with the Bedrock
+ * upper-left convention (v = 0 at the texture top, matching the
+ * top-row-first upload the bridges perform — never flipped), an absent
+ * face bakes nothing.
  *
  * <p>Zero MC/GL imports, Java 8.
  */
@@ -60,9 +63,12 @@ public final class MatouModel {
     /**
      * Bakes every cube into 36 interleaved vertices
      * (pos3 block units, uv2 normalized, normal3) in bone/cube order.
+     * A per-face cube bakes 6 vertices per present face only (an absent
+     * face is dropped, vanilla parity) — box-anchor cubes always bake
+     * the full 36, byte-identical to V1.
      */
     public float[] bakeMesh() {
-        float[] out = new float[cubeCount() * VERTICES_PER_CUBE * VERTEX_STRIDE];
+        float[] out = new float[emittedVertexCount() * VERTEX_STRIDE];
         int at = 0;
         for (ModelBone b : bones) {
             for (ModelCube c : b.cubes) {
@@ -70,6 +76,24 @@ public final class MatouModel {
             }
         }
         return out;
+    }
+
+    private int emittedVertexCount() {
+        int n = 0;
+        for (ModelBone b : bones) {
+            for (ModelCube c : b.cubes) {
+                if (c.faceUv == null) {
+                    n += VERTICES_PER_CUBE;
+                } else {
+                    for (String f : ModelCube.FACES) {
+                        if (c.faceUv.containsKey(f)) {
+                            n += 6;
+                        }
+                    }
+                }
+            }
+        }
+        return n;
     }
 
     /**
@@ -146,6 +170,11 @@ public final class MatouModel {
         double sz = (c.maxZ() - c.minZ());
         // Faces: normal + 4 corners (a,b,c,d) wound so (a,b,c)+(a,c,d) face out.
         // Corner order mirrors the live BOX_VERTICES box exactly.
+        // Per-face corner patterns ride the Bedrock upper-left convention
+        // (hub decisions/MATOU_MODEL.md, V2 tranche): five faces read the
+        // rect with its top-left at c/d, down anchors its origin at b.
+        double[][] cornerPat = {{0.0, 1.0}, {1.0, 1.0}, {1.0, 0.0}, {0.0, 0.0}};
+        double[][] downPat = {{1.0, 0.0}, {0.0, 0.0}, {0.0, 1.0}, {1.0, 1.0}};
         double[][] faces = {
             {0, 0, 1, x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1, sx, sy},
             {0, 0, -1, x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0, sx, sy},
@@ -154,10 +183,19 @@ public final class MatouModel {
             {1, 0, 0, x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1, sz, sy},
             {-1, 0, 0, x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0, sz, sy},
         };
-        for (double[] f : faces) {
+        for (int fi = 0; fi < faces.length; fi++) {
+            double[] f = faces[fi];
             double nx = f[0];
             double ny = f[1];
             double nz = f[2];
+            double[] rect = null;
+            if (c.faceUv != null) {
+                rect = c.faceUv.get(ModelCube.FACES[fi]);
+                if (rect == null) {
+                    continue;
+                }
+            }
+            double[][] pat = "down".equals(ModelCube.FACES[fi]) ? downPat : cornerPat;
             double[] cornerU = {0.0, f[15], f[15], 0.0};
             double[] cornerV = {0.0, 0.0, f[16], f[16]};
             double[][] p = {
@@ -169,8 +207,13 @@ public final class MatouModel {
                 out[at++] = (float) p[k][0];
                 out[at++] = (float) p[k][1];
                 out[at++] = (float) p[k][2];
-                out[at++] = (float) ((c.uvU + cornerU[k]) / textureWidth);
-                out[at++] = (float) ((c.uvV + cornerV[k]) / textureHeight);
+                if (rect != null) {
+                    out[at++] = (float) ((rect[0] + pat[k][0] * rect[2]) / textureWidth);
+                    out[at++] = (float) ((rect[1] + pat[k][1] * rect[3]) / textureHeight);
+                } else {
+                    out[at++] = (float) ((c.uvU + cornerU[k]) / textureWidth);
+                    out[at++] = (float) ((c.uvV + cornerV[k]) / textureHeight);
+                }
                 out[at++] = (float) nx;
                 out[at++] = (float) ny;
                 out[at++] = (float) nz;

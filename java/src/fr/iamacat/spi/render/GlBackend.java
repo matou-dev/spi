@@ -1,5 +1,6 @@
 package fr.iamacat.spi.render;
 
+import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 
 /**
@@ -15,6 +16,15 @@ public interface GlBackend {
     int GL_TRIANGLES = 0x0004;
     int GL_VERTEX_SHADER = 0x8B31;
     int GL_FRAGMENT_SHADER = 0x8B30;
+    int GL_TEXTURE_2D = 0x0DE1;
+    int GL_RGBA = 0x1908;
+    int GL_UNSIGNED_BYTE = 0x1401;
+    int GL_TEXTURE_MIN_FILTER = 0x2801;
+    int GL_TEXTURE_MAG_FILTER = 0x2800;
+    int GL_TEXTURE_WRAP_S = 0x2802;
+    int GL_TEXTURE_WRAP_T = 0x2803;
+    int GL_NEAREST = 0x2600;
+    int GL_CLAMP_TO_EDGE = 0x812F;
 
     int genBuffers();
     void bindBuffer(int target, int buffer);
@@ -50,6 +60,14 @@ public interface GlBackend {
     void uniform1i(int location, int value);
     void uniform1f(int location, float value);
     void uniform4f(int location, float x, float y, float z, float w);
+
+    int genTextures();
+    void bindTexture(int target, int texture);
+    void texImage2D(int target, int level, int internalFormat,
+            int width, int height, int border, int format, int type,
+            ByteBuffer pixels);
+    void texParameteri(int target, int pname, int param);
+    void deleteTextures(int texture);
 
     void drawArraysInstanced(int mode, int first, int count, int instanceCount);
 }

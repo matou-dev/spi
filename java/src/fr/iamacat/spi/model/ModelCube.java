@@ -1,12 +1,24 @@
 package fr.iamacat.spi.model;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
  * One Bedrock box: origin (min corner, px), size (px, strictly positive
  * after inflate), box UV anchor (px) and inflate (px, expands every side).
- * Bind pose only — pivot/rotation bake lands with the animation tranche.
+ * A cube optionally carries per-face UV rects instead of the box anchor
+ * (hub decisions/MATOU_MODEL.md, V2 tranche): face name to {u, v, w, h}
+ * in px, null when the cube rides the box anchor. Bind pose only —
+ * pivot/rotation bake lands with the animation tranche.
  * Zero MC/GL imports, Java 8.
  */
 public final class ModelCube {
+    /** Bedrock face names in bake order (south, north, up, down, east, west). */
+    public static final String[] FACES = {
+        "south", "north", "up", "down", "east", "west",
+    };
+
     public final double originX;
     public final double originY;
     public final double originZ;
@@ -17,9 +29,24 @@ public final class ModelCube {
     public final double uvV;
     public final double inflate;
 
+    /**
+     * Per-face UV rects ({u, v, w, h} px, unmodifiable) or null for box
+     * mode. A present face bakes its rect, an absent face bakes nothing
+     * (vanilla parity — omitting a face drops it, never a default rect).
+     */
+    public final Map<String, double[]> faceUv;
+
     public ModelCube(double originX, double originY, double originZ,
             double sizeX, double sizeY, double sizeZ,
             double uvU, double uvV, double inflate) {
+        this(originX, originY, originZ, sizeX, sizeY, sizeZ,
+                uvU, uvV, inflate, null);
+    }
+
+    public ModelCube(double originX, double originY, double originZ,
+            double sizeX, double sizeY, double sizeZ,
+            double uvU, double uvV, double inflate,
+            Map<String, double[]> faceUv) {
         if (Double.isNaN(originX) || Double.isNaN(originY) || Double.isNaN(originZ)
                 || Double.isNaN(sizeX) || Double.isNaN(sizeY) || Double.isNaN(sizeZ)
                 || Double.isNaN(uvU) || Double.isNaN(uvV) || Double.isNaN(inflate)) {
@@ -38,6 +65,34 @@ public final class ModelCube {
             throw new IllegalArgumentException("E_MODEL_CUBE:size <inflate "
                     + inflate + " inverts the box> (want size + 2*inflate > 0)");
         }
+        Map<String, double[]> faces = null;
+        if (faceUv != null) {
+            faces = new LinkedHashMap<String, double[]>();
+            for (Map.Entry<String, double[]> e : faceUv.entrySet()) {
+                String name = e.getKey();
+                double[] r = e.getValue();
+                if (!isFace(name) || r == null || r.length != 4
+                        || Double.isNaN(r[0]) || Double.isNaN(r[1])
+                        || Double.isNaN(r[2]) || Double.isNaN(r[3])
+                        || Double.isInfinite(r[0]) || Double.isInfinite(r[1])
+                        || Double.isInfinite(r[2]) || Double.isInfinite(r[3])) {
+                    throw new IllegalArgumentException("E_MODEL_FACE:shape <"
+                            + name + "> (want a known face to {u, v, w, h})");
+                }
+                if (r[0] < 0.0 || r[1] < 0.0) {
+                    throw new IllegalArgumentException("E_MODEL_FACE:uv <"
+                            + name + " " + r[0] + "," + r[1]
+                            + "> (want u,v >= 0 — the sampler clamps, never wraps)");
+                }
+                if (!(r[2] > 0.0) || !(r[3] > 0.0)) {
+                    throw new IllegalArgumentException("E_MODEL_FACE:size <"
+                            + name + " " + r[2] + "x" + r[3]
+                            + "> (want w,h > 0)");
+                }
+                faces.put(name, new double[] {r[0], r[1], r[2], r[3]});
+            }
+            faces = Collections.unmodifiableMap(faces);
+        }
         this.originX = originX;
         this.originY = originY;
         this.originZ = originZ;
@@ -47,6 +102,17 @@ public final class ModelCube {
         this.uvU = uvU;
         this.uvV = uvV;
         this.inflate = inflate;
+        this.faceUv = faces;
+    }
+
+    /** True for the six Bedrock face names, nothing else. */
+    public static boolean isFace(String name) {
+        for (String f : FACES) {
+            if (f.equals(name)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public double minX() {

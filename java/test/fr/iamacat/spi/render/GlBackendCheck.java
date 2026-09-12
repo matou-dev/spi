@@ -36,6 +36,7 @@ public final class GlBackendCheck {
         testInstanceFormatPacking();
         testInstanceFormatRefusals();
         testMockGlBackendWorkflow();
+        testMockGlBackendTexture();
         System.out.println("ok gl-backend-check : all instance formatting and backend checks passed");
     }
 
@@ -94,6 +95,32 @@ public final class GlBackendCheck {
         check(mock.calls.contains("bufferData:34962:12"), "bufferData recorded with 12 floats");
         check(mock.calls.contains("drawArraysInstanced:4:0:36:1"), "drawArraysInstanced recorded");
         check(mock.calls.contains("deleteBuffers:1"), "deleteBuffers recorded");
+    }
+
+    /**
+     * Texture upload workflow (V2 tranche): gen, bind, image, params —
+     * the exact call shape the bridge renderer replays against LWJGL.
+     */
+    private static void testMockGlBackendTexture() {
+        MockGlBackend mock = new MockGlBackend();
+
+        int tex = mock.genTextures();
+        check(tex == 1, "texture id 1");
+        mock.bindTexture(GlBackend.GL_TEXTURE_2D, tex);
+        java.nio.ByteBuffer pixels = java.nio.ByteBuffer.allocate(4 * 4 * 4);
+        mock.texImage2D(GlBackend.GL_TEXTURE_2D, 0, GlBackend.GL_RGBA,
+                4, 4, 0, GlBackend.GL_RGBA, GlBackend.GL_UNSIGNED_BYTE, pixels);
+        mock.texParameteri(GlBackend.GL_TEXTURE_2D,
+                GlBackend.GL_TEXTURE_MIN_FILTER, GlBackend.GL_NEAREST);
+        mock.texParameteri(GlBackend.GL_TEXTURE_2D,
+                GlBackend.GL_TEXTURE_MAG_FILTER, GlBackend.GL_NEAREST);
+        mock.deleteTextures(tex);
+
+        check(mock.calls.contains("bindTexture:3553:1"), "bindTexture recorded");
+        check(mock.calls.contains("texImage2D:3553:4:4:64"), "texImage2D recorded with 64 bytes");
+        check(mock.calls.contains("texParameteri:3553:10241:9728"), "min filter recorded");
+        check(mock.calls.contains("texParameteri:3553:10240:9728"), "mag filter recorded");
+        check(mock.calls.contains("deleteTextures:1"), "deleteTextures recorded");
     }
 
     private static final class MockGlBackend implements GlBackend {
@@ -177,6 +204,26 @@ public final class GlBackendCheck {
         @Override
         public void drawArraysInstanced(int mode, int first, int count, int instanceCount) {
             calls.add("drawArraysInstanced:" + mode + ":" + first + ":" + count + ":" + instanceCount);
+        }
+        @Override
+        public int genTextures() { return nextId++; }
+        @Override
+        public void bindTexture(int target, int texture) {
+            calls.add("bindTexture:" + target + ":" + texture);
+        }
+        @Override
+        public void texImage2D(int target, int level, int internalFormat,
+                int width, int height, int border, int format, int type,
+                java.nio.ByteBuffer pixels) {
+            calls.add("texImage2D:" + target + ":" + width + ":" + height + ":" + pixels.remaining());
+        }
+        @Override
+        public void texParameteri(int target, int pname, int param) {
+            calls.add("texParameteri:" + target + ":" + pname + ":" + param);
+        }
+        @Override
+        public void deleteTextures(int texture) {
+            calls.add("deleteTextures:" + texture);
         }
     }
 }
