@@ -4,6 +4,7 @@ import fr.iamacat.spi.hit.BoneBox;
 import fr.iamacat.spi.hit.HitTester;
 import fr.iamacat.spi.hit.RayHit;
 import fr.iamacat.spi.hit.Vec3d;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -71,6 +72,11 @@ public final class ModelCheck {
         testBoneBoxes();
         testPlacedBoxes();
         testEmptyAndInflate();
+        testRotationCompat();
+        testBoneRotation();
+        testHierarchy();
+        testCubeRotation();
+        testBoneInflate();
         testRefusals();
         System.out.println("ok model-check : all declarative-model tests passed");
     }
@@ -244,7 +250,147 @@ public final class ModelCheck {
         check(bare.boneBoxes().size() == 1, "defaults (uv/inflate/pivot) accepted");
     }
 
+    /**
+     * Rotation compat comparateur: explicit zero rotations bake exactly
+     * the unrotated bytes (mesh float-for-float, boxes field-for-field).
+     * Bridges re-pin without re-proof on the strength of this test.
+     */
+    private static void testRotationCompat() {
+        MatouModel plain = MatouModelParser.parse(BEAST);
+        MatouModel zeroed = MatouModelParser.parse(
+                "{\"format_version\": \"1.12.0\", \"minecraft:geometry\": [{"
+                + "\"description\": {\"identifier\": \"geometry.my_beast\","
+                + " \"texture_width\": 64, \"texture_height\": 64},"
+                + "\"bones\": ["
+                + "{\"name\": \"body\", \"pivot\": [0, 8, 0], \"rotation\": [0, 0, 0],"
+                + " \"cubes\": [{\"origin\": [-8, 0, -8], \"size\": [16, 16, 16],"
+                + " \"uv\": [0, 0]}]},"
+                + "{\"name\": \"head\", \"parent\": \"body\", \"pivot\": [0, 20, 0],"
+                + " \"rotation\": [0, 0, 0],"
+                + " \"cubes\": [{\"origin\": [-4, 16, -4], \"size\": [8, 8, 8],"
+                + " \"uv\": [32, 0], \"inflate\": 0.5}]}"
+                + "]}]}");
+        check(Arrays.equals(plain.bakeMesh(), zeroed.bakeMesh()), "zero rotation bakes identical mesh");
+        List<BoneBox> a = plain.boneBoxes();
+        List<BoneBox> b = zeroed.boneBoxes();
+        check(a.size() == b.size(), "zero rotation keeps box count");
+        for (int i = 0; i < a.size(); i++) {
+            check(a.get(i).boneName.equals(b.get(i).boneName)
+                    && a.get(i).box.equals(b.get(i).box), "zero rotation keeps boxes");
+        }
+    }
+
+    /**
+     * Bone yaw golden (bind-pose rotation tranche): a 2x1x1 slab yawed
+     * 90 degrees about its own center stands 1x1x2. Positions, normals
+     * and the conservative box all ride the rotation.
+     */
+    private static void testBoneRotation() {
+        MatouModel m = MatouModelParser.parse(
+                "{\"format_version\": \"1.12.0\", \"minecraft:geometry\": [{"
+                + "\"description\": {\"identifier\": \"geometry.yaw\","
+                + " \"texture_width\": 64, \"texture_height\": 64},"
+                + "\"bones\": [{\"name\": \"slab\", \"pivot\": [16, 8, 8],"
+                + " \"rotation\": [0, 90, 0],"
+                + " \"cubes\": [{\"origin\": [0, 0, 0], \"size\": [32, 16, 16],"
+                + " \"uv\": [0, 0]}]}]}]}");
+        check(m.bones.get(0).rotY == 90.0, "yaw parsed");
+        float[] v = m.bakeMesh();
+        check(v.length == 36 * 8, "rotated cube keeps 36 verts");
+        // South corner a (0,0,16)px swings to (24,0,24)px = (1.5, 0, 1.5) blocks.
+        check(Math.abs(v[0] - 1.5f) < 1e-6, "yawed first pos x");
+        check(Math.abs(v[1]) < 1e-6, "yawed first pos y");
+        check(Math.abs(v[2] - 1.5f) < 1e-6, "yawed first pos z");
+        // South normal +Z yaws to +X.
+        check(Math.abs(v[5] - 1.0f) < 1e-6
+                && Math.abs(v[6]) < 1e-6 && Math.abs(v[7]) < 1e-6, "yawed south normal +X");
+        windingOutward(v);
+        List<BoneBox> boxes = m.boneBoxes();
+        check(boxes.size() == 1, "one rotated box");
+        check(Math.abs(boxes.get(0).box.minX - 0.5) < 1e-9
+                && Math.abs(boxes.get(0).box.maxX - 1.5) < 1e-9
+                && Math.abs(boxes.get(0).box.minY) < 1e-9
+                && Math.abs(boxes.get(0).box.maxY - 1.0) < 1e-9
+                && Math.abs(boxes.get(0).box.minZ - (-0.5)) < 1e-9
+                && Math.abs(boxes.get(0).box.maxZ - 1.5) < 1e-9,
+                "yawed box = 1x1x2 blocks");
+        // The high ray still resolves through the shared ray-tester.
+        RayHit hit = HitTester.test(boxes,
+                new Vec3d(1.0, 0.5, 5.0), new Vec3d(0.0, 0.0, -1.0), 10.0);
+        check(hit != null && hit.boneName.equals("slab"), "yawed box hit");
+    }
+
+    /**
+     * Hierarchy golden: a parented bone rides its parent's rotation —
+     * the child cube orbits the parent pivot, it never stays behind.
+     */
+    private static void testHierarchy() {
+        MatouModel m = MatouModelParser.parse(
+                "{\"format_version\": \"1.12.0\", \"minecraft:geometry\": [{"
+                + "\"description\": {\"identifier\": \"geometry.arm\","
+                + " \"texture_width\": 64, \"texture_height\": 64},"
+                + "\"bones\": ["
+                + "{\"name\": \"root\", \"pivot\": [0, 0, 0], \"rotation\": [0, 90, 0]},"
+                + "{\"name\": \"arm\", \"parent\": \"root\", \"pivot\": [16, 0, 0],"
+                + " \"cubes\": [{\"origin\": [16, 0, 0], \"size\": [16, 16, 16],"
+                + " \"uv\": [0, 0]}]}]}]}");
+        float[] v = m.bakeMesh();
+        check(v.length == 36 * 8, "parented cube keeps 36 verts");
+        windingOutward(v);
+        List<BoneBox> boxes = m.boneBoxes();
+        check(boxes.size() == 1 && boxes.get(0).boneName.equals("arm"), "empty parent bakes no box");
+        // Cube x[16,32] y[0,16] z[0,16] orbits the root yaw to x[0,16] z[-32,-16]px.
+        check(Math.abs(boxes.get(0).box.minX) < 1e-9
+                && Math.abs(boxes.get(0).box.maxX - 1.0) < 1e-9
+                && Math.abs(boxes.get(0).box.minY) < 1e-9
+                && Math.abs(boxes.get(0).box.maxY - 1.0) < 1e-9
+                && Math.abs(boxes.get(0).box.minZ - (-2.0)) < 1e-9
+                && Math.abs(boxes.get(0).box.maxZ - (-1.0)) < 1e-9,
+                "child cube orbits the parent pivot");
+    }
+
+    /**
+     * Cube-level pitch golden: rotation about the default box center
+     * stands a 1x2x1 column into a 1x1x2 beam.
+     */
+    private static void testCubeRotation() {
+        MatouModel m = MatouModelParser.parse(
+                "{\"format_version\": \"1.12.0\", \"minecraft:geometry\": [{"
+                + "\"description\": {\"identifier\": \"geometry.beam\","
+                + " \"texture_width\": 64, \"texture_height\": 64},"
+                + "\"bones\": [{\"name\": \"b\","
+                + " \"cubes\": [{\"origin\": [0, 0, 0], \"size\": [16, 32, 16],"
+                + " \"uv\": [0, 0], \"rotation\": [90, 0, 0]}]}]}]}");
+        float[] v = m.bakeMesh();
+        windingOutward(v);
+        List<BoneBox> boxes = m.boneBoxes();
+        check(Math.abs(boxes.get(0).box.minX) < 1e-9
+                && Math.abs(boxes.get(0).box.maxX - 1.0) < 1e-9
+                && Math.abs(boxes.get(0).box.minY - 0.5) < 1e-9
+                && Math.abs(boxes.get(0).box.maxY - 1.5) < 1e-9
+                && Math.abs(boxes.get(0).box.minZ - (-0.5)) < 1e-9
+                && Math.abs(boxes.get(0).box.maxZ - 1.5) < 1e-9,
+                "pitched cube = 1x1x2 beam");
+    }
+
+    /** Bone inflate funds cubes that carry none (cube inflate still wins). */
+    private static void testBoneInflate() {
+        MatouModel m = MatouModelParser.parse(
+                "{\"format_version\": \"1.12.0\", \"minecraft:geometry\": [{"
+                + "\"description\": {\"identifier\": \"geometry.puff\","
+                + " \"texture_width\": 64, \"texture_height\": 64},"
+                + "\"bones\": [{\"name\": \"puff\", \"inflate\": 1.0,"
+                + " \"cubes\": [{\"origin\": [0, 0, 0], \"size\": [16, 16, 16]}]}]}]}");
+        List<BoneBox> boxes = m.boneBoxes();
+        check(boxes.get(0).box.minX == -1.0 / 16.0
+                && boxes.get(0).box.maxX == 17.0 / 16.0
+                && boxes.get(0).box.minY == -1.0 / 16.0
+                && boxes.get(0).box.maxY == 17.0 / 16.0,
+                "bone inflate grows bare cubes");
+    }
+
     private static void testRefusals() {
+
         assertThrows(() -> MatouModelParser.parse(null), "E_MODEL_JSON:empty");
         assertThrows(() -> MatouModelParser.parse("  "), "E_MODEL_JSON:empty");
         assertThrows(() -> MatouModelParser.parse("{nope"), "E_MODEL_JSON:syntax");
@@ -312,5 +458,24 @@ public final class ModelCheck {
                 + "\"north\": {\"uv\": [-1, 0]}" + faceTail), "E_MODEL_FACE:uv");
         assertThrows(() -> MatouModelParser.parse(faceHead
                 + "\"north\": {\"uv\": [56, 56]}" + faceTail), "E_MODEL_FACE:uv");
+        assertThrows(() -> MatouModelParser.parse(head
+                + "{\"name\": \"a\", \"rotation\": [0, 0]}" + tail), "E_MODEL_BONE:rotation");
+        assertThrows(() -> MatouModelParser.parse(head
+                + "{\"name\": \"a\", \"rotation\": \"nope\"}" + tail), "E_MODEL_BONE:rotation");
+        assertThrows(() -> MatouModelParser.parse(head
+                + "{\"name\": \"a\", \"poly_mesh\": {}}" + tail), "E_MODEL_BONE:shape");
+        assertThrows(() -> MatouModelParser.parse(head
+                + "{\"name\": \"a\", \"texture_meshes\": []}" + tail), "E_MODEL_BONE:shape");
+        assertThrows(() -> MatouModelParser.parse(head
+                + "{\"name\": \"a\", \"parent\": \"b\"},"
+                + "{\"name\": \"b\", \"parent\": \"a\"}" + tail), "E_MODEL_BONE:parent");
+        assertThrows(() -> MatouModelParser.parse(head
+                + "{\"name\": \"a\", \"cubes\": [{\"origin\": [0, 0, 0],"
+                + " \"size\": [1, 1, 1], \"rotation\": [0, 0]}]}" + tail),
+                "E_MODEL_CUBE:rotation");
+        assertThrows(() -> MatouModelParser.parse(head
+                + "{\"name\": \"a\", \"cubes\": [{\"origin\": [0, 0, 0],"
+                + " \"size\": [1, 1, 1], \"pivot\": [0, 0]}]}" + tail),
+                "E_MODEL_CUBE:pivot");
     }
 }

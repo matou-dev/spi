@@ -71,6 +71,24 @@ public final class MatouModelParser {
                         + b.name + " -> " + b.parent + "> (want an existing bone)");
             }
         }
+        for (ModelBone b : bones) {
+            Set<String> seen = new HashSet<String>();
+            String cur = b.name;
+            while (cur != null) {
+                if (!seen.add(cur)) {
+                    throw new IllegalArgumentException("E_MODEL_BONE:parent <cycle at "
+                            + cur + "> (want an acyclic bone tree)");
+                }
+                ModelBone n = null;
+                for (ModelBone c : bones) {
+                    if (c.name.equals(cur)) {
+                        n = c;
+                        break;
+                    }
+                }
+                cur = (n == null) ? null : n.parent;
+            }
+        }
         return new MatouModel(((String) identifier).trim(), texW, texH, bones);
     }
 
@@ -79,6 +97,10 @@ public final class MatouModelParser {
         Object name = m.get("name");
         if (!(name instanceof String) || ((String) name).trim().isEmpty()) {
             throw new IllegalArgumentException("E_MODEL_BONE:empty (want a non-blank bone name)");
+        }
+        if (m.get("poly_mesh") != null || m.get("texture_meshes") != null) {
+            throw new IllegalArgumentException("E_MODEL_BONE:shape <" + name
+                    + "> (poly_mesh/texture_meshes never bake — split before import)");
         }
         Object parent = m.get("parent");
         String parentName = null;
@@ -94,6 +116,14 @@ public final class MatouModelParser {
         if (m.get("pivot") != null) {
             pivot = vec3(m.get("pivot"), "E_MODEL_BONE:pivot");
         }
+        double[] rotation = {0.0, 0.0, 0.0};
+        if (m.get("rotation") != null) {
+            rotation = vec3(m.get("rotation"), "E_MODEL_BONE:rotation");
+        }
+        double boneInflate = 0.0;
+        if (m.get("inflate") != null) {
+            boneInflate = num(m.get("inflate"), "E_MODEL_BONE:inflate");
+        }
         List<ModelCube> cubes = new ArrayList<ModelCube>();
         Object cubesObj = m.get("cubes");
         if (cubesObj != null) {
@@ -101,14 +131,15 @@ public final class MatouModelParser {
                 throw new IllegalArgumentException("E_MODEL_CUBE:shape (want a cubes array)");
             }
             for (Object ce : (List<?>) cubesObj) {
-                cubes.add(parseCube(ce, texW, texH));
+                cubes.add(parseCube(ce, texW, texH, boneInflate));
             }
         }
         return new ModelBone(((String) name).trim(), parentName,
-                pivot[0], pivot[1], pivot[2], cubes);
+                pivot[0], pivot[1], pivot[2],
+                rotation[0], rotation[1], rotation[2], boneInflate, cubes);
     }
 
-    private static ModelCube parseCube(Object e, int texW, int texH) {
+    private static ModelCube parseCube(Object e, int texW, int texH, double boneInflate) {
         Map<String, Object> m = asObject(e, "E_MODEL_CUBE:shape (want an object per cube)");
         if (m.get("origin") == null) {
             throw new IllegalArgumentException("E_MODEL_CUBE:origin (want origin [x, y, z])");
@@ -138,12 +169,21 @@ public final class MatouModelParser {
                 throw new IllegalArgumentException("E_MODEL_CUBE:uv (want [u, v] with u,v >= 0)");
             }
         }
-        double inflate = 0.0;
+        double inflate = boneInflate;
         if (m.get("inflate") != null) {
             inflate = num(m.get("inflate"), "E_MODEL_CUBE:shape");
         }
+        double[] rotation = null;
+        if (m.get("rotation") != null) {
+            rotation = vec3(m.get("rotation"), "E_MODEL_CUBE:rotation");
+        }
+        double[] pivot = null;
+        if (m.get("pivot") != null) {
+            pivot = vec3(m.get("pivot"), "E_MODEL_CUBE:pivot");
+        }
         return new ModelCube(origin[0], origin[1], origin[2],
-                size[0], size[1], size[2], uvU, uvV, inflate, faceUv);
+                size[0], size[1], size[2], uvU, uvV, inflate, faceUv,
+                rotation, pivot);
     }
 
     /**
