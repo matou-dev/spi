@@ -517,9 +517,14 @@ public final class MatouModel {
 
     /**
      * GPU delivery contract: per-bone pose delta matrices, model bone
-     * order, 4x4 row-major float[16] each. The shader skins bind
-     * positions directly ({@code worldPos = D_bone * bindPos}) where
-     * {@code D = W_pose * W_bind^-1}. An identity pose yields identity
+     * order, 4x4 row-major float[16] each, block units throughout. The
+     * shader skins bind positions directly
+     * ({@code worldPos = D_bone * bindPos}) where
+     * {@code D = W_pose * W_bind^-1} — the bind bake is blocks while
+     * the pivots are Bedrock px, so the px translation normalizes here
+     * (a pivot-moving rotation otherwise displaces the skinned mesh by
+     * 16x — caught by the 3-bone palette golden, invisible to the
+     * older axis-invariant goldens). An identity pose yields identity
      * matrices (the delta comparateur pins it).
      */
     public Map<String, float[]> poseDeltaMatrices(MatouAnimation.AnimPose pose) {
@@ -530,7 +535,11 @@ public final class MatouModel {
             List<PosedLevel> chain = chainForPosed(b, byName, pmap);
             double[] wPose = worldMatrix(chain, false);
             double[] wBind = worldMatrix(chain, true);
-            out.put(b.name, toFloat(mul4(wPose, invertRts(wBind))));
+            double[] d = mul4(wPose, invertRts(wBind));
+            d[3] /= PX_PER_BLOCK;
+            d[7] /= PX_PER_BLOCK;
+            d[11] /= PX_PER_BLOCK;
+            out.put(b.name, toFloat(d));
         }
         return Collections.unmodifiableMap(out);
     }

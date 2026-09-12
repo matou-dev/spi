@@ -37,6 +37,7 @@ public final class GlBackendCheck {
         testInstanceFormatRefusals();
         testMockGlBackendWorkflow();
         testMockGlBackendTexture();
+        testMockGlBackendPalette();
         System.out.println("ok gl-backend-check : all instance formatting and backend checks passed");
     }
 
@@ -123,6 +124,28 @@ public final class GlBackendCheck {
         check(mock.calls.contains("deleteTextures:1"), "deleteTextures recorded");
     }
 
+    /**
+     * Bone-palette upload workflow (generic-palette tranche): unit
+     * select, float RGBA image (4 columns x N bones), unit restore —
+     * the exact call shape the bridge renderer replays per bucket.
+     */
+    private static void testMockGlBackendPalette() {
+        MockGlBackend mock = new MockGlBackend();
+
+        mock.activeTexture(GlBackend.GL_TEXTURE1);
+        int tex = mock.genTextures();
+        mock.bindTexture(GlBackend.GL_TEXTURE_2D, tex);
+        java.nio.ByteBuffer pixels = java.nio.ByteBuffer.allocate(4 * 3 * 16 * 4);
+        mock.texImage2D(GlBackend.GL_TEXTURE_2D, 0, GlBackend.GL_RGBA32F,
+                4, 3, 0, GlBackend.GL_RGBA, GlBackend.GL_FLOAT, pixels);
+        mock.activeTexture(GlBackend.GL_TEXTURE0);
+
+        check(mock.calls.contains("activeTexture:33985"), "palette unit selected");
+        check(mock.calls.contains("texImage2D:3553:4:3:768"),
+                "bone palette upload recorded with 768 bytes");
+        check(mock.calls.contains("activeTexture:33984"), "unit restored");
+    }
+
     private static final class MockGlBackend implements GlBackend {
         final List<String> calls = new ArrayList<>();
         private int nextId = 1;
@@ -207,6 +230,10 @@ public final class GlBackendCheck {
         }
         @Override
         public int genTextures() { return nextId++; }
+        @Override
+        public void activeTexture(int texture) {
+            calls.add("activeTexture:" + texture);
+        }
         @Override
         public void bindTexture(int target, int texture) {
             calls.add("bindTexture:" + target + ":" + texture);

@@ -32,6 +32,24 @@ public final class ModelCheck {
             + " \"uv\": [32, 0], \"inflate\": 0.5}]}"
             + "]}]}";
 
+    /** Three-bone fixture (generic-palette tranche): the arm hangs off
+     * the body beside the head, pinning parent composition past 2 bones. */
+    private static final String TRIPLE =
+            "{\"format_version\": \"1.12.0\", \"minecraft:geometry\": [{"
+            + "\"description\": {\"identifier\": \"geometry.triple\","
+            + " \"texture_width\": 64, \"texture_height\": 64},"
+            + "\"bones\": ["
+            + "{\"name\": \"body\", \"pivot\": [0, 8, 0],"
+            + " \"cubes\": [{\"origin\": [-8, 0, -8], \"size\": [16, 16, 16],"
+            + " \"uv\": [0, 0]}]},"
+            + "{\"name\": \"head\", \"parent\": \"body\", \"pivot\": [0, 20, 0],"
+            + " \"cubes\": [{\"origin\": [-4, 16, -4], \"size\": [8, 8, 8],"
+            + " \"uv\": [32, 0]}]},"
+            + "{\"name\": \"arm\", \"parent\": \"body\", \"pivot\": [8, 16, 0],"
+            + " \"cubes\": [{\"origin\": [8, 12, -2], \"size\": [4, 8, 4],"
+            + " \"uv\": [40, 16]}]}"
+            + "]}]}";
+
     private static final String PFACE =
             "{\"format_version\": \"1.12.0\", \"minecraft:geometry\": [{"
             + "\"description\": {\"identifier\": \"geometry.faced\","
@@ -88,6 +106,7 @@ public final class ModelCheck {
         testPosedYaw();
         testMatrixCrossCheck();
         testSkinned();
+        testPaletteBones();
         testAnimRefusals();
         System.out.println("ok model-check : all declarative-model tests passed");
     }
@@ -726,6 +745,62 @@ public final class ModelCheck {
         int headAt = 36 * 9;
         check(skinned[headAt + 8] == 1.0f, "head vertices ride bone 1");
         windingOutward9(skinned);
+    }
+
+    /**
+     * Three-bone palette goldens (generic-palette tranche): parse order
+     * and hierarchy, skinned bone-2 index, three identity deltas, a
+     * third-bone clip serving through eval, delta-vs-oracle cross-check
+     * over all three bones, three posed boxes. The N-bone APIs loop
+     * unbounded — this pins it past the old 2-bone proof.
+     */
+    private static void testPaletteBones() {
+        MatouModel m = MatouModelParser.parse(TRIPLE);
+        check(m.bones.size() == 3, "three bones parse");
+        check(m.bones.get(2).name.equals("arm"), "arm third");
+        check(m.bones.get(2).parent.equals("body"), "arm hangs off the body");
+        float[] bind = m.bakeMesh();
+        float[] skinned = m.bakeSkinnedMesh();
+        check(skinned.length == 3 * 36 * 9, "three cubes bake 108 stride-9 vertices");
+        check(skinned[8] == 0.0f, "body vertices ride bone 0");
+        check(skinned[36 * 9 + 8] == 1.0f, "head vertices ride bone 1");
+        check(skinned[2 * 36 * 9 + 8] == 2.0f, "arm vertices ride bone 2");
+        Map<String, float[]> ident = m.poseDeltaMatrices(MatouAnimation.AnimPose.identity());
+        check(ident.size() == 3, "three delta matrices");
+        for (float[] d : ident.values()) {
+            check(d.length == 16, "palette delta is 4x4");
+            for (int i = 0; i < 16; i++) {
+                float want = (i % 5 == 0) ? 1.0f : 0.0f;
+                check(Math.abs(d[i] - want) < 1e-6, "identity pose yields identity palette");
+            }
+        }
+        Map<String, MatouAnimation> sway = MatouAnimationParser.parse(
+                "{\"format_version\": \"1.10.0\", \"animations\": {"
+                + "\"animation.x.sway\": {\"loop\": true, \"animation_length\": 1.0,"
+                + " \"bones\": {\"arm\": {\"rotation\": [45.0, 0.0, 0.0]}}}}}");
+        MatouAnimation.AnimPose pose = sway.get("animation.x.sway")
+                .evaluate(0.0, ctx(0.0, 0.0, 0.0));
+        check(Math.abs(pose.bones.get("arm").rotX - 45.0) < 1e-9,
+                "third-bone channel serves through eval");
+        float[] oracle = m.bakePosedMesh(pose);
+        Map<String, float[]> deltas = m.poseDeltaMatrices(pose);
+        int verts = bind.length / 8;
+        for (int v = 0; v < verts; v++) {
+            int bone = (int) skinned[v * 9 + 8];
+            float[] d = deltas.get(m.bones.get(bone).name);
+            double x = bind[v * 8];
+            double y = bind[v * 8 + 1];
+            double z = bind[v * 8 + 2];
+            double wx = d[0] * x + d[1] * y + d[2] * z + d[3];
+            double wy = d[4] * x + d[5] * y + d[6] * z + d[7];
+            double wz = d[8] * x + d[9] * y + d[10] * z + d[11];
+            check(Math.abs(wx - oracle[v * 8]) < 1e-5
+                    && Math.abs(wy - oracle[v * 8 + 1]) < 1e-5
+                    && Math.abs(wz - oracle[v * 8 + 2]) < 1e-5,
+                    "palette vertex " + v + " matches the oracle");
+        }
+        List<BoneBox> boxes = m.placedPosedBoxes(0.0, 0.0, 0.0, pose);
+        check(boxes.size() == 3, "three posed boxes");
     }
 
     private static void windingOutward9(float[] v) {

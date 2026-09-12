@@ -25,6 +25,9 @@ public interface GlBackend {
     int GL_TEXTURE_WRAP_T = 0x2803;
     int GL_NEAREST = 0x2600;
     int GL_CLAMP_TO_EDGE = 0x812F;
+    int GL_TEXTURE0 = 0x84C0;
+    int GL_TEXTURE1 = 0x84C1;
+    int GL_RGBA32F = 0x8814;
 
     int genBuffers();
     void bindBuffer(int target, int buffer);
@@ -62,6 +65,13 @@ public interface GlBackend {
     void uniform4f(int location, float x, float y, float z, float w);
 
     int genTextures();
+    /**
+     * Selects the active texture unit for subsequent bind/upload calls
+     * (multi-texture: the beast albedo rides unit 0, the bone palette
+     * unit 1 — hub decisions/MATOU_ANIMATION.md). Era-native
+     * glActiveTexture underneath, never assumed by callers.
+     */
+    void activeTexture(int texture);
     void bindTexture(int target, int texture);
     void texImage2D(int target, int level, int internalFormat,
             int width, int height, int border, int format, int type,
